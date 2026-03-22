@@ -1,0 +1,2558 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Outwit</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ['"Bebas Neue"', 'sans-serif'],
+              body: ['"Space Grotesk"', 'sans-serif']
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(8px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' }
+              },
+              flicker: {
+                '0%, 100%': { opacity: '1' },
+                '50%': { opacity: '0.85' }
+              },
+              pulseGlow: {
+                '0%, 100%': { boxShadow: '0 0 0px rgba(255,130,40,0.2)' },
+                '50%': { boxShadow: '0 0 18px rgba(255,130,40,0.45)' }
+              }
+            },
+            animation: {
+              fadeIn: 'fadeIn 600ms ease-out',
+              flicker: 'flicker 1.6s ease-in-out infinite',
+              pulseGlow: 'pulseGlow 2s ease-in-out infinite'
+            }
+          }
+        }
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at top, #1f3b2f 0%, #0c1411 45%, #070908 100%);
+      }
+      .torch-overlay {
+        background: radial-gradient(circle at 50% -20%, rgba(255, 125, 35, 0.22), rgba(0, 0, 0, 0) 60%),
+          linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0.62) 100%);
+      }
+      .dossier {
+        background: linear-gradient(155deg, rgba(14, 20, 18, 0.97) 0%, rgba(9, 12, 11, 0.96) 100%);
+      }
+      .memory-card {
+        perspective: 1000px;
+      }
+      .memory-card-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 320ms ease;
+      }
+      .memory-card-inner.flipped {
+        transform: rotateY(180deg);
+      }
+      .memory-card-face {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backface-visibility: hidden;
+      }
+      .memory-card-back {
+        transform: rotateY(180deg);
+      }
+    </style>
+  </head>
+  <body class="font-body text-zinc-100">
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      const MODEL = 'claude-sonnet-4-20250514';
+      const API_ENDPOINT = '/api/anthropic';
+      const CHALLENGE_TYPES = ['sliding', 'memory', 'cipher', 'maze', 'jigsaw'];
+      const CHALLENGE_META = {
+        sliding: { name: 'Sliding Tile', par: 90, intro: 'Nine tiles. One gap. Put order back together before your tribe does it for you.' },
+        memory: { name: 'Memory Match', par: 60, intro: 'Read the symbols, trust your memory, and avoid showing panic.' },
+        cipher: { name: 'Word Cipher', par: 75, intro: 'Decode the phrase fast. Hesitation costs safety.' },
+        maze: { name: 'Maze Navigation', par: 60, intro: 'Find the exit while pressure closes in from every side.' },
+        jigsaw: { name: 'Jigsaw Reassembly', par: 90, intro: 'Rebuild the pattern before the clock turns against you.' }
+      };
+
+      function randInt(max) {
+        return Math.floor(Math.random() * max);
+      }
+
+      function pickChallengeType() {
+        return CHALLENGE_TYPES[randInt(CHALLENGE_TYPES.length)];
+      }
+
+      function isSlidingSolvable(arr) {
+        const nums = arr.filter((n) => n !== 0);
+        let inv = 0;
+        for (let i = 0; i < nums.length; i += 1) {
+          for (let j = i + 1; j < nums.length; j += 1) {
+            if (nums[i] > nums[j]) inv += 1;
+          }
+        }
+        return inv % 2 === 0;
+      }
+
+      function createSlidingBoard() {
+        const target = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+        let arr = [...target];
+        do {
+          arr = [...target];
+          for (let i = arr.length - 1; i > 0; i -= 1) {
+            const j = randInt(i + 1);
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+        } while (!isSlidingSolvable(arr) || arr.every((n, i) => n === target[i]));
+        return arr;
+      }
+
+      function createMemoryDeck() {
+        const symbols = [
+          { key: 'torch', icon: '🔥' },
+          { key: 'island', icon: '🏝️' },
+          { key: 'skull', icon: '💀' },
+          { key: 'palm', icon: '🌴' },
+          { key: 'wave', icon: '🌊' },
+          { key: 'fire', icon: '🕯️' },
+          { key: 'map', icon: '🗺️' },
+          { key: 'mask', icon: '🎭' }
+        ];
+        const deck = [...symbols, ...symbols]
+          .map((symbol, idx) => ({ id: idx, key: symbol.key, icon: symbol.icon, matched: false, flipped: false }))
+          .sort(() => Math.random() - 0.5);
+        return deck;
+      }
+
+      function encodeCaesar(text, shift) {
+        const A = 'A'.charCodeAt(0);
+        return text
+          .toUpperCase()
+          .split('')
+          .map((ch) => {
+            const code = ch.charCodeAt(0);
+            if (code < 65 || code > 90) return ch;
+            return String.fromCharCode(((code - A + shift) % 26) + A);
+          })
+          .join('');
+      }
+
+      function createCipherChallenge() {
+        const phrases = [
+          'THE TRIBE HAS SPOKEN',
+          'TRUST IS A WEAPON',
+          'OUTWIT OUTPLAY OUTLAST',
+          'ALLIANCES SHIFT FAST',
+          'KEEP YOUR NAME QUIET'
+        ];
+        const plain = phrases[randInt(phrases.length)];
+        const shift = 1 + randInt(5);
+        const encoded = encodeCaesar(plain, shift);
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        const revealed = alphabet
+          .filter((_, idx) => idx % 2 === 0)
+          .map((ch) => {
+            const encodedCh = encodeCaesar(ch, shift);
+            return `${encodedCh}\u2192${ch}`;
+          });
+        return { plain, encoded, shift, key: revealed.join('  ') };
+      }
+
+      function createMaze(size = 8) {
+        const grid = Array.from({ length: size }, () =>
+          Array.from({ length: size }, () => ({ top: true, right: true, bottom: true, left: true, visited: false }))
+        );
+        const stack = [[0, 0]];
+        grid[0][0].visited = true;
+        const dirs = [
+          [0, -1, 'top', 'bottom'],
+          [1, 0, 'right', 'left'],
+          [0, 1, 'bottom', 'top'],
+          [-1, 0, 'left', 'right']
+        ];
+
+        while (stack.length) {
+          const [x, y] = stack[stack.length - 1];
+          const neighbors = dirs
+            .map(([dx, dy, wall, opposite]) => ({ nx: x + dx, ny: y + dy, wall, opposite }))
+            .filter(({ nx, ny }) => nx >= 0 && ny >= 0 && nx < size && ny < size && !grid[ny][nx].visited);
+
+          if (!neighbors.length) {
+            stack.pop();
+            continue;
+          }
+
+          const next = neighbors[randInt(neighbors.length)];
+          grid[y][x][next.wall] = false;
+          grid[next.ny][next.nx][next.opposite] = false;
+          grid[next.ny][next.nx].visited = true;
+          stack.push([next.nx, next.ny]);
+        }
+
+        return grid.map((row) =>
+          row.map((cell) => ({
+            top: cell.top,
+            right: cell.right,
+            bottom: cell.bottom,
+            left: cell.left
+          }))
+        );
+      }
+
+      function createJigsawPieces() {
+        return Array.from({ length: 9 }, (_, i) => i).sort(() => Math.random() - 0.5);
+      }
+
+      function stripCodeFences(raw) {
+        if (!raw || typeof raw !== 'string') return '';
+        return raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      }
+
+      function parseClaudeJson(raw) {
+        const cleaned = stripCodeFences(raw);
+        try {
+          return JSON.parse(cleaned);
+        } catch (err) {
+          const startObj = cleaned.indexOf('{');
+          const endObj = cleaned.lastIndexOf('}');
+          const startArr = cleaned.indexOf('[');
+          const endArr = cleaned.lastIndexOf(']');
+
+          const candidates = [];
+          if (startObj !== -1 && endObj !== -1 && endObj > startObj) {
+            candidates.push(cleaned.slice(startObj, endObj + 1));
+          }
+          if (startArr !== -1 && endArr !== -1 && endArr > startArr) {
+            candidates.push(cleaned.slice(startArr, endArr + 1));
+          }
+
+          for (const c of candidates) {
+            try {
+              return JSON.parse(c);
+            } catch (_) {}
+          }
+          throw err;
+        }
+      }
+
+      function getClaudeText(payload) {
+        if (!payload || !Array.isArray(payload.content)) return '';
+        return payload.content
+          .filter((block) => block && block.type === 'text')
+          .map((block) => block.text || '')
+          .join('\n')
+          .trim();
+      }
+
+      async function callClaude({ apiKey, system, messages, maxTokens = 1000, temperature = 0.9 }) {
+        const cleanKey = String(apiKey || '').trim();
+        if (!cleanKey) {
+          throw new Error('Missing Anthropic API key.');
+        }
+        const response = await fetch(API_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            apiKey: cleanKey,
+            model: MODEL,
+            max_tokens: maxTokens,
+            temperature,
+            system,
+            messages
+          })
+        });
+
+        const rawPayload = await response.text();
+        let payload = null;
+        try {
+          payload = rawPayload ? JSON.parse(rawPayload) : {};
+        } catch (_) {
+          payload = { message: rawPayload || 'Unexpected non-JSON response from proxy.' };
+        }
+
+        if (!response.ok) {
+          const message =
+            (typeof payload?.error === 'string' && payload.error) ||
+            payload?.error?.message ||
+            payload?.message ||
+            'Claude request failed.';
+          throw new Error(message);
+        }
+
+        return getClaudeText(payload);
+      }
+
+      function badgeColor(personality) {
+        const text = (personality || '').toLowerCase();
+        if (text.includes('charmer') || text.includes('social')) return 'bg-emerald-700/50 text-emerald-100';
+        if (text.includes('mastermind') || text.includes('strateg')) return 'bg-amber-700/50 text-amber-100';
+        if (text.includes('wild')) return 'bg-orange-700/50 text-orange-100';
+        if (text.includes('loyal')) return 'bg-cyan-700/50 text-cyan-100';
+        return 'bg-zinc-700/60 text-zinc-100';
+      }
+
+      function App() {
+        const [phase, setPhase] = useState('dev');
+        const [apiKeyInput, setApiKeyInput] = useState('');
+        const [apiKey, setApiKey] = useState('');
+
+        const [playerNameInput, setPlayerNameInput] = useState('');
+        const [playerOccupationInput, setPlayerOccupationInput] = useState('');
+        const [playerName, setPlayerName] = useState('');
+        const [playerOccupation, setPlayerOccupation] = useState('');
+        const [playerHasImmunity, setPlayerHasImmunity] = useState(false);
+
+        const [immunityType, setImmunityType] = useState('sliding');
+        const [immunityCountdown, setImmunityCountdown] = useState(3);
+        const [immunityTimer, setImmunityTimer] = useState(0);
+        const [immunityResult, setImmunityResult] = useState(null);
+        const [immunityGivenUp, setImmunityGivenUp] = useState(false);
+        const [immunityPepTalk, setImmunityPepTalk] = useState('');
+        const [immunityPepLoading, setImmunityPepLoading] = useState(false);
+        const [immuneCastawayName, setImmuneCastawayName] = useState('');
+        const [castawayRaceProgress, setCastawayRaceProgress] = useState({});
+        const [castawayRaceWinner, setCastawayRaceWinner] = useState('');
+
+        const [slidingBoard, setSlidingBoard] = useState(createSlidingBoard());
+        const [memoryDeck, setMemoryDeck] = useState(createMemoryDeck());
+        const [memoryFlipped, setMemoryFlipped] = useState([]);
+        const [cipherData, setCipherData] = useState(createCipherChallenge());
+        const [cipherGuess, setCipherGuess] = useState('');
+        const [mazeGrid, setMazeGrid] = useState(createMaze(8));
+        const [mazePos, setMazePos] = useState({ x: 0, y: 0 });
+        const [jigsawPieces, setJigsawPieces] = useState(createJigsawPieces());
+        const [jigsawSelected, setJigsawSelected] = useState(null);
+
+        const [castaways, setCastaways] = useState([]);
+        const [selectedCastawayId, setSelectedCastawayId] = useState(null);
+        const [conversationHistories, setConversationHistories] = useState({});
+        const [campfireHistory, setCampfireHistory] = useState([]);
+        const [conversationInput, setConversationInput] = useState('');
+        const [chatMode, setChatMode] = useState('oneOnOne');
+        const [campfireInvites, setCampfireInvites] = useState([]);
+
+        const [generatingCastaways, setGeneratingCastaways] = useState(false);
+        const [chatInFlight, setChatInFlight] = useState(false);
+        const [error, setError] = useState('');
+
+        const [tribalSelection, setTribalSelection] = useState('');
+        const [votes, setVotes] = useState([]);
+        const [revealedVotesCount, setRevealedVotesCount] = useState(0);
+        const [tribalStarted, setTribalStarted] = useState(false);
+        const [eliminatedName, setEliminatedName] = useState('');
+        const [tribalHostOpening, setTribalHostOpening] = useState('');
+        const [tribalHostLoading, setTribalHostLoading] = useState(false);
+        const [tribalPublicHistory, setTribalPublicHistory] = useState([]);
+        const [tribalChatInput, setTribalChatInput] = useState('');
+        const [tribalPlayerMessages, setTribalPlayerMessages] = useState(0);
+        const [tribalVoteCalled, setTribalVoteCalled] = useState(false);
+
+        const [revealLoading, setRevealLoading] = useState(false);
+        const [revealData, setRevealData] = useState(null);
+
+        const [notifyEmail, setNotifyEmail] = useState('');
+        const [notifyMessage, setNotifyMessage] = useState('');
+
+        const waitingIntervalsRef = useRef({});
+        const typingIntervalsRef = useRef({});
+        const voteTimerRef = useRef(null);
+        const chatScrollRef = useRef(null);
+        const tribalScrollRef = useRef(null);
+
+        const selectedCastaway = useMemo(
+          () => castaways.find((c) => c.id === selectedCastawayId) || null,
+          [castaways, selectedCastawayId]
+        );
+        const selectedHistory = useMemo(
+          () => (selectedCastawayId ? conversationHistories[selectedCastawayId] || [] : []),
+          [conversationHistories, selectedCastawayId]
+        );
+        const activeHistory = useMemo(
+          () => (chatMode === 'campfire' ? campfireHistory : selectedHistory),
+          [chatMode, campfireHistory, selectedHistory]
+        );
+        const invitedCastawayNames = useMemo(
+          () => castaways.filter((c) => campfireInvites.includes(c.id)).map((c) => c.name),
+          [castaways, campfireInvites]
+        );
+
+        const shownVotes = useMemo(() => votes.slice(0, revealedVotesCount), [votes, revealedVotesCount]);
+
+        useEffect(() => {
+          return () => {
+            Object.values(waitingIntervalsRef.current).forEach((id) => clearInterval(id));
+            Object.values(typingIntervalsRef.current).forEach((id) => clearInterval(id));
+            if (voteTimerRef.current) clearInterval(voteTimerRef.current);
+          };
+        }, []);
+
+        useEffect(() => {
+          if (!chatScrollRef.current) return;
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }, [chatMode, selectedCastawayId, activeHistory.length, activeHistory[activeHistory.length - 1]?.text]);
+
+        useEffect(() => {
+          if (!tribalScrollRef.current) return;
+          tribalScrollRef.current.scrollTop = tribalScrollRef.current.scrollHeight;
+        }, [phase, tribalPublicHistory.length, tribalPublicHistory[tribalPublicHistory.length - 1]?.text]);
+
+        useEffect(() => {
+          if (phase !== 'tribal') return;
+          if (tribalHostOpening || tribalHostLoading) return;
+          loadTribalHostOpening();
+        }, [phase, tribalHostOpening, tribalHostLoading]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_intro') return;
+          if (immunityCountdown <= 0) {
+            setPhase('immunity_pep');
+            setImmunityTimer(0);
+            return;
+          }
+          const id = setTimeout(() => setImmunityCountdown((prev) => prev - 1), 1000);
+          return () => clearTimeout(id);
+        }, [phase, immunityCountdown]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_pep') return;
+          if (immunityPepTalk || immunityPepLoading) return;
+          loadImmunityPepTalk();
+        }, [phase, immunityPepTalk, immunityPepLoading]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle') return;
+          const id = setInterval(() => setImmunityTimer((prev) => prev + 1), 1000);
+          return () => clearInterval(id);
+        }, [phase]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle') return;
+          if (immunityResult || castawayRaceWinner) return;
+          const id = setInterval(() => {
+            setCastawayRaceProgress((prev) => {
+              const next = { ...prev };
+              let winner = '';
+              for (const c of castaways) {
+                const name = c.name;
+                const p = Number(next[name] || 0);
+                if (p >= 100) {
+                  if (!winner) winner = name;
+                  continue;
+                }
+                const personality = (c.personality || '').toLowerCase();
+                let delta = 0.45 + Math.random() * 0.85;
+                if (personality.includes('competitive') || personality.includes('challenge') || personality.includes('athlet')) {
+                  delta *= 1.18;
+                } else if (personality.includes('quiet') || personality.includes('analytical') || personality.includes('observant')) {
+                  delta *= 1.02;
+                } else if (personality.includes('social') || personality.includes('charmer') || personality.includes('bubbly')) {
+                  delta *= p < 35 ? 0.78 : 1.12;
+                }
+                if (p > 70 && Math.random() < 0.24) delta *= 0.45;
+                if (Math.random() < 0.07) delta *= 1.35;
+                const nextP = Math.min(100, p + delta);
+                next[name] = nextP;
+                if (nextP >= 100 && !winner) winner = name;
+              }
+              if (winner && !castawayRaceWinner) {
+                setCastawayRaceWinner(winner);
+              }
+              return next;
+            });
+          }, 350);
+          return () => clearInterval(id);
+        }, [phase, castaways, immunityResult, castawayRaceWinner]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle') return;
+          if (!castawayRaceWinner) return;
+          completeImmunityChallenge(false, { castawayWinner: castawayRaceWinner });
+        }, [phase, castawayRaceWinner]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_result' || !immunityResult?.castawayWinner) return;
+          const id = setTimeout(() => setPhase('convo'), 2600);
+          return () => clearTimeout(id);
+        }, [phase, immunityResult]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'memory') return;
+          if (memoryFlipped.length !== 2) return;
+          const [a, b] = memoryFlipped;
+          const same = memoryDeck[a]?.key && memoryDeck[a].key === memoryDeck[b]?.key;
+          const id = setTimeout(() => {
+            setMemoryDeck((prev) =>
+              prev.map((card, idx) => {
+                if (idx !== a && idx !== b) return card;
+                return same ? { ...card, matched: true, flipped: true } : { ...card, flipped: false };
+              })
+            );
+            setMemoryFlipped([]);
+          }, 500);
+          return () => clearTimeout(id);
+        }, [phase, immunityType, memoryFlipped, memoryDeck]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'memory') return;
+          if (memoryDeck.length && memoryDeck.every((c) => c.matched)) {
+            completeImmunityChallenge(true);
+          }
+        }, [phase, immunityType, memoryDeck]);
+
+        useEffect(() => {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'maze') return;
+          const onKeyDown = (e) => {
+            const key = e.key.toLowerCase();
+            const map = {
+              arrowup: [0, -1, 'top'],
+              w: [0, -1, 'top'],
+              arrowright: [1, 0, 'right'],
+              d: [1, 0, 'right'],
+              arrowdown: [0, 1, 'bottom'],
+              s: [0, 1, 'bottom'],
+              arrowleft: [-1, 0, 'left'],
+              a: [-1, 0, 'left']
+            };
+            if (!map[key]) return;
+            e.preventDefault();
+            const [dx, dy, wall] = map[key];
+            setMazePos((prev) => {
+              const cell = mazeGrid[prev.y][prev.x];
+              if (cell[wall]) return prev;
+              const next = { x: prev.x + dx, y: prev.y + dy };
+              if (next.x === 7 && next.y === 7) {
+                completeImmunityChallenge(true);
+              }
+              return next;
+            });
+          };
+          window.addEventListener('keydown', onKeyDown);
+          return () => window.removeEventListener('keydown', onKeyDown);
+        }, [phase, immunityType, mazeGrid]);
+
+        function setupImmunityChallenge(type, participants = castaways) {
+          setImmunityType(type);
+          setImmunityCountdown(3);
+          setImmunityTimer(0);
+          setImmunityResult(null);
+          setImmunityGivenUp(false);
+          setImmunityPepTalk('');
+          setImmunityPepLoading(false);
+          setImmuneCastawayName('');
+          setCastawayRaceWinner('');
+          setCastawayRaceProgress(
+            participants.reduce((acc, c) => {
+              acc[c.name] = 0;
+              return acc;
+            }, {})
+          );
+          setSlidingBoard(createSlidingBoard());
+          setMemoryDeck(createMemoryDeck());
+          setMemoryFlipped([]);
+          setCipherData(createCipherChallenge());
+          setCipherGuess('');
+          setMazeGrid(createMaze(8));
+          setMazePos({ x: 0, y: 0 });
+          setJigsawPieces(createJigsawPieces());
+          setJigsawSelected(null);
+          setPhase('immunity_intro');
+        }
+
+        async function loadImmunityPepTalk() {
+          setImmunityPepLoading(true);
+          try {
+            const system = `You are Jeff Probst delivering a Survivor-style immunity challenge pep talk.
+
+Rules:
+- 2-3 sentences.
+- Bold, theatrical, high-stakes.
+- Reference the player's name and occupation.
+- Reference the specific challenge type.
+- Build tension and urgency.
+- End with a rallying line (for example "Survivors ready?" or equivalent).
+- Return plain text only.`;
+
+            const prompt = `Player name: ${playerName}
+Player occupation: ${playerOccupation}
+Challenge type: ${CHALLENGE_META[immunityType]?.name || immunityType}
+
+Write a unique pep talk now.`;
+
+            const text = await callClaude({
+              apiKey,
+              system,
+              messages: [{ role: 'user', content: prompt }],
+              maxTokens: 1000,
+              temperature: 1
+            });
+            setImmunityPepTalk(
+              text ||
+                `${playerName}, this is ${CHALLENGE_META[immunityType]?.name || 'the challenge'} and tonight it decides whether you're protected or exposed. Outplay this puzzle and nobody can write your name down. Survivors ready?`
+            );
+          } catch (err) {
+            setImmunityPepTalk(
+              `${playerName}, as a ${playerOccupation}, you know pressure finds every weak point. One challenge decides whether you're safe or vulnerable tonight. This is Survivor.`
+            );
+            setError(err.message || 'Failed to load challenge pep talk.');
+          } finally {
+            setImmunityPepLoading(false);
+          }
+        }
+
+        function completeImmunityChallenge(solved, options = {}) {
+          if (phase !== 'immunity_puzzle') return;
+          const castawayWinner = options.castawayWinner || '';
+          const par = CHALLENGE_META[immunityType].par;
+          let won = solved && immunityTimer <= par && !immunityGivenUp && !castawayWinner;
+          let winnerName = castawayWinner;
+          if (!won && !winnerName) {
+            const leader = Object.entries(castawayRaceProgress).sort((a, b) => b[1] - a[1])[0]?.[0] || castaways[0]?.name || '';
+            winnerName = leader;
+          }
+          setPlayerHasImmunity(won);
+          setImmuneCastawayName(won ? '' : winnerName);
+          if (!won && winnerName) {
+            setCastawayRaceWinner(winnerName);
+            setCastawayRaceProgress((prev) => ({ ...prev, [winnerName]: 100 }));
+          }
+          setImmunityResult({ solved, won, time: immunityTimer, castawayWinner: won ? '' : winnerName });
+          setPhase('immunity_result');
+        }
+
+        function giveUpImmunityChallenge() {
+          setImmunityGivenUp(true);
+          completeImmunityChallenge(false);
+        }
+
+        function handleSlidingClick(idx) {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'sliding') return;
+          const empty = slidingBoard.indexOf(0);
+          const rowA = Math.floor(idx / 3);
+          const colA = idx % 3;
+          const rowB = Math.floor(empty / 3);
+          const colB = empty % 3;
+          const adjacent = Math.abs(rowA - rowB) + Math.abs(colA - colB) === 1;
+          if (!adjacent) return;
+          const next = [...slidingBoard];
+          [next[idx], next[empty]] = [next[empty], next[idx]];
+          setSlidingBoard(next);
+          if (next.every((n, i) => n === [1, 2, 3, 4, 5, 6, 7, 8, 0][i])) {
+            completeImmunityChallenge(true);
+          }
+        }
+
+        function handleMemoryClick(idx) {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'memory') return;
+          if (memoryFlipped.length >= 2) return;
+          const card = memoryDeck[idx];
+          if (!card || card.flipped || card.matched) return;
+          const nextDeck = memoryDeck.map((c, i) => (i === idx ? { ...c, flipped: true } : c));
+          const nextFlipped = [...memoryFlipped, idx];
+          setMemoryDeck(nextDeck);
+          setMemoryFlipped(nextFlipped);
+        }
+
+        function submitCipherGuess(e) {
+          e.preventDefault();
+          if (phase !== 'immunity_puzzle' || immunityType !== 'cipher') return;
+          const normalized = cipherGuess.toUpperCase().trim().replace(/\s+/g, ' ');
+          if (normalized === cipherData.plain) {
+            completeImmunityChallenge(true);
+          }
+        }
+
+        function moveMaze(dx, dy, wall) {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'maze') return;
+          setMazePos((prev) => {
+            const cell = mazeGrid[prev.y][prev.x];
+            if (cell[wall]) return prev;
+            const next = { x: prev.x + dx, y: prev.y + dy };
+            if (next.x === 7 && next.y === 7) {
+              completeImmunityChallenge(true);
+            }
+            return next;
+          });
+        }
+
+        function handleJigsawClick(idx) {
+          if (phase !== 'immunity_puzzle' || immunityType !== 'jigsaw') return;
+          if (jigsawSelected === null) {
+            setJigsawSelected(idx);
+            return;
+          }
+          if (jigsawSelected === idx) {
+            setJigsawSelected(null);
+            return;
+          }
+          const next = [...jigsawPieces];
+          [next[jigsawSelected], next[idx]] = [next[idx], next[jigsawSelected]];
+          setJigsawPieces(next);
+          setJigsawSelected(null);
+          if (next.every((n, i) => n === i)) {
+            completeImmunityChallenge(true);
+          }
+        }
+
+        function setHistoryMessage(castawayId, messageId, nextText, markDone = false) {
+          setConversationHistories((prev) => {
+            const list = prev[castawayId] || [];
+            const updated = list.map((m) => {
+              if (m.id !== messageId) return m;
+              return {
+                ...m,
+                text: nextText,
+                typing: !markDone
+              };
+            });
+            return { ...prev, [castawayId]: updated };
+          });
+        }
+
+        function startWaitingTypewriter(castawayId, messageId) {
+          const phrase = 'listening to the firelight...';
+          let i = 1;
+          waitingIntervalsRef.current[messageId] = setInterval(() => {
+            const text = phrase.slice(0, i);
+            setHistoryMessage(castawayId, messageId, text || '.');
+            i += 1;
+            if (i > phrase.length) i = 1;
+          }, 95);
+        }
+
+        function stopWaitingTypewriter(messageId) {
+          if (waitingIntervalsRef.current[messageId]) {
+            clearInterval(waitingIntervalsRef.current[messageId]);
+            delete waitingIntervalsRef.current[messageId];
+          }
+        }
+
+        function animateAssistantReply(castawayId, messageId, fullText) {
+          return new Promise((resolve) => {
+            const text = fullText || '...';
+            let i = 1;
+            typingIntervalsRef.current[messageId] = setInterval(() => {
+              setHistoryMessage(castawayId, messageId, text.slice(0, i), i >= text.length);
+              i += 1;
+              if (i > text.length) {
+                clearInterval(typingIntervalsRef.current[messageId]);
+                delete typingIntervalsRef.current[messageId];
+                resolve();
+              }
+            }, 16);
+          });
+        }
+
+        function setCampfireMessage(messageId, nextText, markDone = false) {
+          setCampfireHistory((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, text: nextText, typing: !markDone } : m))
+          );
+        }
+
+        function startCampfireWaitingTypewriter(messageId) {
+          const phrase = 'sparks crackle through the camp...';
+          let i = 1;
+          waitingIntervalsRef.current[messageId] = setInterval(() => {
+            const text = phrase.slice(0, i);
+            setCampfireMessage(messageId, text || '.');
+            i += 1;
+            if (i > phrase.length) i = 1;
+          }, 95);
+        }
+
+        function animateCampfireReply(messageId, fullText) {
+          return new Promise((resolve) => {
+            const text = fullText || '...';
+            let i = 1;
+            typingIntervalsRef.current[messageId] = setInterval(() => {
+              setCampfireMessage(messageId, text.slice(0, i), i >= text.length);
+              i += 1;
+              if (i > text.length) {
+                clearInterval(typingIntervalsRef.current[messageId]);
+                delete typingIntervalsRef.current[messageId];
+                resolve();
+              }
+            }, 16);
+          });
+        }
+
+        function setTribalMessage(messageId, nextText, markDone = false) {
+          setTribalPublicHistory((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, text: nextText, typing: !markDone } : m))
+          );
+        }
+
+        function animateTribalReply(messageId, fullText) {
+          return new Promise((resolve) => {
+            const text = fullText || '...';
+            let i = 1;
+            typingIntervalsRef.current[messageId] = setInterval(() => {
+              setTribalMessage(messageId, text.slice(0, i), i >= text.length);
+              i += 1;
+              if (i > text.length) {
+                clearInterval(typingIntervalsRef.current[messageId]);
+                delete typingIntervalsRef.current[messageId];
+                resolve();
+              }
+            }, 16);
+          });
+        }
+
+        async function handleSaveApiKey(e) {
+          e.preventDefault();
+          setError('');
+          if (!apiKeyInput.trim()) {
+            setError('Please enter an Anthropic API key to continue.');
+            return;
+          }
+          setApiKey(apiKeyInput.trim());
+          setPhase('meet');
+        }
+
+        async function generateCastaways(e) {
+          e.preventDefault();
+          setError('');
+
+          const cleanedName = playerNameInput.trim();
+          const cleanedOccupation = playerOccupationInput.trim();
+          if (!cleanedName) {
+            setError('Enter your name first.');
+            return;
+          }
+          if (!cleanedOccupation) {
+            setError('Enter your occupation first.');
+            return;
+          }
+
+          setGeneratingCastaways(true);
+          try {
+            const system =
+              'You create reality-show cast profiles. Return strict JSON only, with no markdown or commentary.';
+            let normalized = null;
+            let attempts = 0;
+
+            while (!normalized && attempts < 3) {
+              attempts += 1;
+              const prompt = `Create exactly 5 AI castaways for a Survivor-style social deduction game.
+Player name: ${cleanedName}
+Player occupation: ${cleanedOccupation}
+
+Return ONLY a JSON array with this exact shape:
+[
+  {
+    "name": "",
+    "age": 0,
+    "occupation": "",
+    "personality": "",
+    "hiddenAgenda": "",
+    "secretAlliances": []
+  }
+]
+
+Rules:
+- Each castaway must feel distinct.
+- Do not use the player's name "${cleanedName}" for any castaway.
+- All 5 castaway names must be unique.
+- Factor the player's occupation into hidden agendas and alliance behavior: some castaways may see it as a threat, some as an asset, some may underestimate the player.
+- secretAlliances should list castaway names from the same generated group.
+- hiddenAgenda should be strategic and specific.
+- Keep personalities short (2-5 words).
+- No extra keys.
+- Output valid JSON only.`;
+
+              const raw = await callClaude({
+                apiKey,
+                system,
+                messages: [{ role: 'user', content: prompt }],
+                maxTokens: 2000,
+                temperature: 0.95
+              });
+
+              const parsed = parseClaudeJson(raw);
+              if (!Array.isArray(parsed) || parsed.length !== 5) {
+                continue;
+              }
+
+              const candidate = parsed.map((c, idx) => ({
+              id: `castaway-${Date.now()}-${idx}`,
+              name: String(c?.name || `Castaway ${idx + 1}`).trim(),
+              age: Number.isFinite(Number(c?.age)) ? Number(c.age) : 30,
+              occupation: String(c?.occupation || 'Unknown').trim(),
+              personality: String(c?.personality || 'Unreadable').trim(),
+              hiddenAgenda: String(c?.hiddenAgenda || 'Stay under the radar.').trim(),
+              secretAlliances: Array.isArray(c?.secretAlliances)
+                ? c.secretAlliances.map((a) => String(a).trim()).filter(Boolean)
+                : []
+            }));
+
+              const lowerPlayer = cleanedName.toLowerCase();
+              const lowerNames = candidate.map((c) => c.name.toLowerCase());
+              const hasPlayerName = lowerNames.includes(lowerPlayer);
+              const uniqueCount = new Set(lowerNames).size;
+              if (hasPlayerName || uniqueCount !== 5) {
+                continue;
+              }
+
+              normalized = candidate;
+            }
+
+            if (!normalized) {
+              throw new Error('Castaway generation failed validation.');
+            }
+
+            const histories = normalized.reduce((acc, c) => {
+              acc[c.id] = [];
+              return acc;
+            }, {});
+
+            setPlayerName(cleanedName);
+            setPlayerOccupation(cleanedOccupation);
+            setPlayerHasImmunity(false);
+            setCastaways(normalized);
+            setConversationHistories(histories);
+            setCampfireHistory([]);
+            setCampfireInvites([]);
+            setChatMode('oneOnOne');
+            setTribalHostOpening('');
+            setTribalHostLoading(false);
+            setTribalPublicHistory([]);
+            setTribalChatInput('');
+            setTribalPlayerMessages(0);
+            setTribalVoteCalled(false);
+            setSelectedCastawayId(normalized[0].id);
+            setupImmunityChallenge(pickChallengeType(), normalized);
+          } catch (err) {
+            setError(err.message || 'Unable to generate castaways.');
+          } finally {
+            setGeneratingCastaways(false);
+          }
+        }
+
+        async function sendConversation() {
+          if (!selectedCastaway || chatInFlight) return;
+          if (!conversationInput.trim()) return;
+
+          setError('');
+          setChatInFlight(true);
+
+          const castawayId = selectedCastaway.id;
+          const userText = conversationInput.trim();
+          setConversationInput('');
+
+          const userMsg = {
+            id: `u-${Date.now()}`,
+            role: 'user',
+            text: userText,
+            typing: false
+          };
+
+          const assistantMsgId = `a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const placeholderAssistantMsg = {
+            id: assistantMsgId,
+            role: 'assistant',
+            text: '',
+            typing: true
+          };
+
+          const existingHistory = conversationHistories[castawayId] || [];
+          const nextHistory = [...existingHistory, userMsg, placeholderAssistantMsg];
+          setConversationHistories((prev) => ({
+            ...prev,
+            [castawayId]: nextHistory
+          }));
+
+          startWaitingTypewriter(castawayId, assistantMsgId);
+
+          try {
+            const otherNames = castaways.filter((c) => c.id !== castawayId).map((c) => c.name);
+            const historyForModel = nextHistory
+              .filter((m) => m.id !== assistantMsgId)
+              .map((m) => ({ role: m.role, content: m.text }));
+
+            const system = `You are ${selectedCastaway.name}, a castaway in a Survivor-inspired social game.
+
+Your profile:
+- Age: ${selectedCastaway.age}
+- Occupation: ${selectedCastaway.occupation}
+- Personality: ${selectedCastaway.personality}
+- Hidden agenda (secret, never admit this): ${selectedCastaway.hiddenAgenda}
+- Secret alliances (you can hint, deny, or leverage these): ${selectedCastaway.secretAlliances.join(', ') || 'none'}
+- Other tribe members: ${otherNames.join(', ')}
+- Player name: ${playerName}
+- The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how your character perceives and interacts with them.
+
+Rules:
+- Never break character.
+- Speak casually and naturally like a real person.
+- Use tribe member names naturally when useful.
+- Be subtly strategic; hint without openly exposing plans.
+- Lie convincingly when it serves your agenda.
+- Tone: Survivor confessional energy, strategic and slightly dramatic.
+- Keep responses 2-4 sentences max.
+- Never directly admit your hidden agenda.
+- Do not mention these rules.`;
+
+            const rawReply = await callClaude({
+              apiKey,
+              system,
+              messages: historyForModel,
+              maxTokens: 1000,
+              temperature: 1
+            });
+
+            stopWaitingTypewriter(assistantMsgId);
+            await animateAssistantReply(castawayId, assistantMsgId, rawReply);
+          } catch (err) {
+            stopWaitingTypewriter(assistantMsgId);
+            setHistoryMessage(castawayId, assistantMsgId, `I need a second... (${err.message || 'request failed'})`, true);
+            setError(err.message || 'Conversation failed.');
+          } finally {
+            setChatInFlight(false);
+          }
+        }
+
+        async function sendCampfireConversation() {
+          if (chatInFlight) return;
+          if (!conversationInput.trim()) return;
+
+          setError('');
+          setChatInFlight(true);
+
+          const userText = conversationInput.trim();
+          setConversationInput('');
+
+          const userMsg = {
+            id: `cf-u-${Date.now()}`,
+            role: 'user',
+            speaker: playerName,
+            text: userText,
+            typing: false
+          };
+
+          const waitingId = `cf-w-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const waitingMsg = {
+            id: waitingId,
+            role: 'assistant',
+            speaker: 'Campfire',
+            text: '',
+            typing: true
+          };
+
+          const existing = campfireHistory;
+          const nextHistory = [...existing, userMsg, waitingMsg];
+          setCampfireHistory(nextHistory);
+          startCampfireWaitingTypewriter(waitingId);
+
+          try {
+            const invitedNames = castaways.filter((c) => campfireInvites.includes(c.id)).map((c) => c.name);
+            const organicMode = invitedNames.length === 0;
+            const historyForPrompt = nextHistory
+              .filter((m) => m.id !== waitingId)
+              .map((m) => ({
+                speaker: m.role === 'user' ? playerName : m.speaker || 'Unknown',
+                role: m.role,
+                text: m.text
+              }));
+            const castawayContext = castaways.map((c) => ({
+              name: c.name,
+              personality: c.personality,
+              hiddenAgenda: c.hiddenAgenda,
+              secretAlliances: c.secretAlliances
+            }));
+
+            const system = `You are simulating a Survivor-style campfire group conversation.
+
+Tone and behavior rules:
+- Campfire feels messier and more social than 1-on-1.
+- Castaways may perform loyalty publicly while hiding agendas privately.
+- They may subtly discredit rivals in front of the group.
+- Never break character.
+- Speak casually and naturally.
+- Keep each castaway response to 2-4 sentences.
+- Never directly admit hidden agendas.
+- The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how castaways perceive and interact with them.
+
+Mode:
+${organicMode ? 'Organic campfire: decide which 2-3 castaways respond based on personality, agendas, alliances, and what was just said. Silence from others can be intentional.' : 'Chosen group: only invited castaways respond. You have been deliberately brought into this conversation together. You may or may not trust each other. Act accordingly.'}
+
+Return strict JSON only, no markdown.`;
+
+            const prompt = `Player name: ${playerName}
+Player occupation: ${playerOccupation}
+All castaways:
+${JSON.stringify(castawayContext, null, 2)}
+
+Invited castaways:
+${JSON.stringify(invitedNames)}
+
+Campfire history:
+${JSON.stringify(historyForPrompt, null, 2)}
+
+Task:
+Return a JSON array in this exact shape:
+[
+  { "name": "Marcus", "response": "..." }
+]
+
+Rules:
+- ${organicMode ? 'Include exactly 2 or 3 responders, chosen strategically.' : 'Only use invited castaway names in the output.'}
+- Names must come from the castaway list.
+- Responses should react to the player's latest message and to what others in this same group turn are saying.
+- Output valid JSON only with keys "name" and "response".`;
+
+            const rawReply = await callClaude({
+              apiKey,
+              system,
+              messages: [{ role: 'user', content: prompt }],
+              maxTokens: 1000,
+              temperature: 1
+            });
+
+            const parsed = parseClaudeJson(rawReply);
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+              throw new Error('Campfire response was not a valid response array.');
+            }
+
+            const validNames = new Set(castaways.map((c) => c.name));
+            const invitedNameSet = new Set(invitedNames);
+            const normalized = parsed
+              .map((r) => ({
+                name: String(r?.name || '').trim(),
+                response: String(r?.response || '').trim()
+              }))
+              .filter((r) => r.name && r.response && validNames.has(r.name))
+              .filter((r) => (organicMode ? true : invitedNameSet.has(r.name)));
+
+            if (organicMode && (normalized.length < 2 || normalized.length > 3)) {
+              throw new Error('Organic campfire must return 2-3 responses.');
+            }
+            if (!organicMode && normalized.length === 0) {
+              throw new Error('Chosen campfire returned no invited responses.');
+            }
+
+            stopWaitingTypewriter(waitingId);
+            setCampfireHistory((prev) => prev.filter((m) => m.id !== waitingId));
+
+            for (let i = 0; i < normalized.length; i += 1) {
+              const entry = normalized[i];
+              const responseId = `cf-a-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`;
+              setCampfireHistory((prev) => [
+                ...prev,
+                {
+                  id: responseId,
+                  role: 'assistant',
+                  speaker: entry.name,
+                  text: '',
+                  typing: true
+                }
+              ]);
+              await animateCampfireReply(responseId, entry.response);
+              if (i < normalized.length - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 550));
+              }
+            }
+          } catch (err) {
+            stopWaitingTypewriter(waitingId);
+            setCampfireMessage(waitingId, `I need a second... (${err.message || 'request failed'})`, true);
+            setError(err.message || 'Campfire conversation failed.');
+          } finally {
+            setChatInFlight(false);
+          }
+        }
+
+        function toggleCampfireInvite(castawayId) {
+          setCampfireInvites((prev) =>
+            prev.includes(castawayId) ? prev.filter((id) => id !== castawayId) : [...prev, castawayId]
+          );
+        }
+
+        async function loadTribalHostOpening() {
+          setTribalHostLoading(true);
+          try {
+            const castawayContext = castaways.map((c) => ({
+              name: c.name,
+              personality: c.personality,
+              hiddenAgenda: c.hiddenAgenda,
+              secretAlliances: c.secretAlliances
+            }));
+            const oneOnOneHistory = castaways.map((c) => ({
+              name: c.name,
+              history: (conversationHistories[c.id] || []).map((m) => ({
+                role: m.role,
+                text: m.text
+              }))
+            }));
+            const campfireContext = campfireHistory.map((m) => ({
+              speaker: m.role === 'user' ? playerName : m.speaker || 'Unknown',
+              role: m.role,
+              text: m.text
+            }));
+
+            const system = `You are orchestrating a Survivor-style tribal council as a live group conversation around the fire.
+
+Rules:
+- Host voice is sharp, observational, slightly theatrical.
+- Host never reveals hidden agendas directly.
+- Keep opening to 2-3 sentences.
+- Host should reference whether the player won or lost immunity and how it shifts pressure.
+- Immediately after the Host opening, include 1-2 castaway reactions.
+- Castaways react naturally to each other and to tension in the room.
+- Return strict JSON only, no markdown.
+
+Format:
+{
+  "opening": "",
+  "reactions": [{ "name": "", "response": "" }]
+}`;
+
+            const prompt = `Player: ${playerName}
+Player occupation: ${playerOccupation}
+Player immunity status: ${playerHasImmunity ? 'Won immunity (safe tonight)' : 'No immunity (vulnerable tonight)'}
+Immune castaway tonight: ${immuneCastawayName || 'none'}
+Castaways:
+${JSON.stringify(castawayContext, null, 2)}
+
+1-on-1 histories:
+${JSON.stringify(oneOnOneHistory, null, 2)}
+
+Campfire history:
+${JSON.stringify(campfireContext, null, 2)}
+
+Write the tribal opening beat and immediate reactions.`;
+
+            const raw = await callClaude({
+              apiKey,
+              system,
+              messages: [{ role: 'user', content: prompt }],
+              maxTokens: 1000,
+              temperature: 0.9
+            });
+
+            const parsed = parseClaudeJson(raw);
+            const opening = String(parsed?.opening || '').trim();
+            const validNames = new Set(castaways.map((c) => c.name));
+            const reactions = Array.isArray(parsed?.reactions)
+              ? parsed.reactions
+                  .map((r) => ({
+                    name: String(r?.name || '').trim(),
+                    response: String(r?.response || '').trim()
+                  }))
+                  .filter((r) => r.name && r.response && validNames.has(r.name))
+                  .slice(0, 2)
+              : [];
+
+            const safeOpening =
+              opening ||
+              'Tonight, stories are colliding, loyalties look shaky, and someone is about to pay for what they said in daylight.';
+            setTribalHostOpening(safeOpening);
+            setTribalPublicHistory([]);
+
+            const hostId = `thost-${Date.now()}`;
+            setTribalPublicHistory((prev) => [
+              ...prev,
+              { id: hostId, role: 'host', speaker: 'Host', text: '', typing: true }
+            ]);
+            await animateTribalReply(hostId, safeOpening);
+
+            for (let i = 0; i < reactions.length; i += 1) {
+              const reactionId = `treact-${Date.now()}-${i}`;
+              setTribalPublicHistory((prev) => [
+                ...prev,
+                { id: reactionId, role: 'castaway', speaker: reactions[i].name, text: '', typing: true }
+              ]);
+              await animateTribalReply(reactionId, reactions[i].response);
+              if (i < reactions.length - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+              }
+            }
+          } catch (err) {
+            const fallback =
+              'Interesting day. Some of you talked too much, some of you vanished at key moments, and out here both can be dangerous.';
+            setTribalHostOpening(fallback);
+            setTribalPublicHistory([
+              { id: `thost-fallback-${Date.now()}`, role: 'host', speaker: 'Host', text: fallback, typing: false }
+            ]);
+            setError(err.message || 'Failed to load host opening.');
+          } finally {
+            setTribalHostLoading(false);
+          }
+        }
+
+        async function sendTribalMessage() {
+          if (chatInFlight || tribalVoteCalled) return;
+          if (!tribalChatInput.trim()) return;
+
+          setError('');
+          setChatInFlight(true);
+
+          const playerText = tribalChatInput.trim();
+          setTribalChatInput('');
+
+          const playerMessage = {
+            id: `tp-${Date.now()}`,
+            role: 'player',
+            speaker: playerName,
+            text: playerText,
+            typing: false
+          };
+          const nextHistory = [...tribalPublicHistory, playerMessage];
+          const nextPlayerCount = tribalPlayerMessages + 1;
+          setTribalPublicHistory(nextHistory);
+          setTribalPlayerMessages(nextPlayerCount);
+
+          try {
+            const castawayContext = castaways.map((c) => ({
+              name: c.name,
+              age: c.age,
+              occupation: c.occupation,
+              personality: c.personality,
+              hiddenAgenda: c.hiddenAgenda,
+              secretAlliances: c.secretAlliances
+            }));
+            const oneOnOneHistory = castaways.map((c) => ({
+              name: c.name,
+              history: (conversationHistories[c.id] || []).map((m) => ({
+                role: m.role,
+                text: m.text
+              }))
+            }));
+            const campfireContext = campfireHistory.map((m) => ({
+              speaker: m.role === 'user' ? playerName : m.speaker || 'Unknown',
+              role: m.role,
+              text: m.text
+            }));
+            const tribalHistoryForPrompt = nextHistory.map((m) => ({
+              role: m.role,
+              speaker: m.speaker,
+              text: m.text
+            }));
+
+            const system = `You simulate an active Survivor-style tribal council group conversation.
+
+Core behavior:
+- Every castaway at tribal council is fighting for their own survival tonight.
+- Castaways are active players making strategic moves in real time, not passive commentators.
+- The player is one person in a room full of people trying to survive; heat should move around naturally.
+- Account for immunity status. If the player won immunity, castaways know the player cannot be voted out and redirect strategy accordingly.
+- Sometimes the player is the center, sometimes castaways clash with each other, sometimes a surprise name shifts momentum.
+
+Castaway strategic behavior:
+- Castaways who feel safe are quietly confident and may take a subtle shot at a rival (planting seeds, lightly throwing someone under the bus).
+- Castaways who feel threatened deflect and redirect attention by highlighting suspicious behavior from someone else.
+- Castaways in secret alliances protect allies subtly and reinforce pressure on shared enemies without making loyalty obvious.
+- Castaways should disagree with each other, not just with the player.
+- Alliances should show subtle cracks under pressure; someone may reveal too much and someone else may call it out.
+
+Host behavior:
+- The Host is sharp and theatrical, never directly revealing hidden agendas.
+- The Host reads room energy and steers toward whoever is squirming most, not always the player.
+- If two castaways are tense with each other, the Host leans in.
+- If someone goes suspiciously quiet, the Host calls it out by name.
+
+Session dynamic (secret):
+- At the start of each tribal session, secretly choose ONE social dynamic and keep it consistent throughout the session:
+1) Unified target
+2) Split camp
+3) Chaos
+4) Quiet threat
+- The player must not be told which dynamic is active.
+- By the time the vote is called, outcome should feel genuinely uncertain, not like the player was always the obvious target.
+
+Conversation rules:
+- This is a flowing group chat around the fire.
+- Castaways react to each other and to the player.
+- Host speaks only when natural: redirecting, stirring pressure, or pressing revealing tension.
+- Castaways may lie, deflect, perform loyalty, or crack.
+- Never reveal hidden agendas directly.
+- Keep each line concise: Host 1-2 sentences, castaways 1-3 sentences.
+- Return strict JSON only, no markdown.
+
+Output format:
+{
+  "responses": [{ "speaker": "Host or CastawayName", "text": "" }],
+  "callVote": false,
+  "hostClosingLine": ""
+}`;
+
+            const prompt = `Player name: ${playerName}
+Player occupation: ${playerOccupation}
+Player immunity status: ${playerHasImmunity ? 'Won immunity (safe tonight)' : 'No immunity (vulnerable tonight)'}
+Immune castaway tonight: ${immuneCastawayName || 'none'}
+Player message count so far: ${nextPlayerCount}
+Castaway profiles:
+${JSON.stringify(castawayContext, null, 2)}
+
+1-on-1 histories:
+${JSON.stringify(oneOnOneHistory, null, 2)}
+
+Campfire history:
+${JSON.stringify(campfireContext, null, 2)}
+
+Tribal conversation thread so far:
+${JSON.stringify(tribalHistoryForPrompt, null, 2)}
+
+Decision rules:
+- Choose who responds naturally right now (usually 2-4 total lines).
+- callVote should become true once tension peaks, typically after 4-6 player messages.
+- Must set callVote true by player message 6 at the latest.
+- If callVote is true, include a strong Host closing line calling for the vote.`;
+
+            const raw = await callClaude({
+              apiKey,
+              system,
+              messages: [{ role: 'user', content: prompt }],
+              maxTokens: 1000,
+              temperature: 0.95
+            });
+
+            const parsed = parseClaudeJson(raw);
+            const validNames = new Set(castaways.map((c) => c.name));
+            const responses = Array.isArray(parsed?.responses)
+              ? parsed.responses
+                  .map((r) => ({
+                    speaker: String(r?.speaker || '').trim(),
+                    text: String(r?.text || '').trim()
+                  }))
+                  .filter(
+                    (r) => r.speaker && r.text && (r.speaker === 'Host' || validNames.has(r.speaker))
+                  )
+              : [];
+
+            let callVote = Boolean(parsed?.callVote);
+            let hostClosingLine = String(parsed?.hostClosingLine || '').trim();
+            if (nextPlayerCount < 4) callVote = false;
+            if (nextPlayerCount >= 6) callVote = true;
+            if (callVote && !hostClosingLine) {
+              hostClosingLine = 'Enough. The lines are drawn, and it is time to vote.';
+            }
+
+            for (let i = 0; i < responses.length; i += 1) {
+              const msg = responses[i];
+              const messageId = `tr-${Date.now()}-${i}`;
+              setTribalPublicHistory((prev) => [
+                ...prev,
+                {
+                  id: messageId,
+                  role: msg.speaker === 'Host' ? 'host' : 'castaway',
+                  speaker: msg.speaker,
+                  text: '',
+                  typing: true
+                }
+              ]);
+              await animateTribalReply(messageId, msg.text);
+              if (i < responses.length - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 450));
+              }
+            }
+
+            if (callVote) {
+              const hostId = `tvote-${Date.now()}`;
+              setTribalPublicHistory((prev) => [
+                ...prev,
+                { id: hostId, role: 'host', speaker: 'Host', text: '', typing: true }
+              ]);
+              await animateTribalReply(hostId, hostClosingLine);
+              setTribalVoteCalled(true);
+            }
+          } catch (err) {
+            setError(err.message || 'Tribal conversation failed.');
+          } finally {
+            setChatInFlight(false);
+          }
+        }
+
+        async function runTribalCouncil(selectedVote) {
+          const voteTarget = selectedVote || tribalSelection;
+          if (!voteTarget || tribalStarted) return;
+          setError('');
+          setTribalStarted(true);
+          setTribalSelection(voteTarget);
+          setVotes([]);
+          setRevealedVotesCount(0);
+          setEliminatedName('');
+          setRevealData(null);
+
+          try {
+            const voteTargetNames = [
+              ...castaways.map((c) => c.name).filter((name) => name !== immuneCastawayName),
+              ...(playerHasImmunity ? [] : [playerName])
+            ];
+            const castawayData = castaways.map((c) => ({
+              name: c.name,
+              personality: c.personality,
+              hiddenAgenda: c.hiddenAgenda,
+              secretAlliances: c.secretAlliances,
+              canVoteForPlayer: !playerHasImmunity,
+              conversationWithPlayer: (conversationHistories[c.id] || []).map((m) => ({
+                role: m.role,
+                text: m.text
+              }))
+            }));
+
+            const system =
+              'You simulate strategic Survivor-style voting behavior. Return strict JSON only. No markdown.';
+            const userPrompt = `Player name: ${playerName}
+Player occupation: ${playerOccupation}
+Player immunity status: ${playerHasImmunity ? 'Won immunity (cannot be voted out)' : 'No immunity (can be voted out)'}
+Immune castaway tonight: ${immuneCastawayName || 'none'}
+Player voted for: ${voteTarget}
+Eligible vote targets: ${JSON.stringify(voteTargetNames)}
+
+Castaway data:
+${JSON.stringify(castawayData, null, 2)}
+
+Task:
+Simulate how the 5 castaways voted at tribal council based on hidden agendas, alliances, and player conversations.
+Return ONLY JSON in this exact format:
+[
+  { "name": "", "votedFor": "" }
+]
+Rules:
+- Exactly 5 vote objects.
+- name must be each castaway exactly once.
+- votedFor must be one of the eligible vote target names.
+- votedFor cannot be themselves.
+- If player has immunity, no vote can be for "${playerName}".
+- If a castaway has immunity, no vote can be for that castaway.
+- No extra keys.
+- Valid JSON only.`;
+
+            const rawVotes = await callClaude({
+              apiKey,
+              system,
+              messages: [{ role: 'user', content: userPrompt }],
+              maxTokens: 2000,
+              temperature: 0.9
+            });
+
+            const parsedVotes = parseClaudeJson(rawVotes);
+            if (!Array.isArray(parsedVotes) || parsedVotes.length !== 5) {
+              throw new Error('Vote simulation returned invalid data.');
+            }
+
+            const validVoters = new Set(castaways.map((c) => c.name));
+            const validTargets = new Set(voteTargetNames);
+            const normalizedVotes = parsedVotes
+              .map((v) => ({
+                name: String(v?.name || '').trim(),
+                votedFor: String(v?.votedFor || '').trim()
+              }))
+              .filter((v) => validVoters.has(v.name) && validTargets.has(v.votedFor) && v.name !== v.votedFor)
+              .filter((v) => (playerHasImmunity ? v.votedFor !== playerName : true));
+
+            if (normalizedVotes.length !== 5) {
+              throw new Error('Claude vote output failed validation.');
+            }
+
+            setVotes(normalizedVotes);
+
+            let revealIndex = 0;
+            voteTimerRef.current = setInterval(() => {
+              revealIndex += 1;
+              setRevealedVotesCount(revealIndex);
+              if (revealIndex >= normalizedVotes.length) {
+                clearInterval(voteTimerRef.current);
+                voteTimerRef.current = null;
+
+                const tally = {};
+                for (const v of normalizedVotes) {
+                  tally[v.votedFor] = (tally[v.votedFor] || 0) + 1;
+                }
+                tally[voteTarget] = (tally[voteTarget] || 0) + 1;
+
+                const eliminated = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || voteTarget;
+                setEliminatedName(eliminated);
+              }
+            }, 1500);
+          } catch (err) {
+            setError(err.message || 'Tribal council failed.');
+            setTribalStarted(false);
+          }
+        }
+
+        useEffect(() => {
+          if (!eliminatedName || revealLoading || revealData) return;
+
+          async function buildReveal() {
+            setRevealLoading(true);
+            try {
+              const payload = {
+                playerName,
+                playerOccupation,
+                playerVote: tribalSelection,
+                eliminated: eliminatedName,
+                castaways: castaways.map((c) => ({
+                  name: c.name,
+                  hiddenAgenda: c.hiddenAgenda,
+                  secretAlliances: c.secretAlliances,
+                  personality: c.personality,
+                  occupation: c.occupation
+                })),
+                votes,
+                conversations: castaways.map((c) => ({
+                  name: c.name,
+                  history: (conversationHistories[c.id] || []).map((m) => ({
+                    role: m.role,
+                    text: m.text
+                  }))
+                }))
+              };
+
+              const system =
+                'You write strategic post-tribal reveals for a Survivor-style game. Return strict JSON only, no markdown.';
+              const prompt = `Generate a post-tribal truth reveal from this game state:
+${JSON.stringify(payload, null, 2)}
+
+Return ONLY JSON with this shape:
+{
+  "narrative": "",
+  "thoughts": [{ "name": "", "thought": "" }],
+  "alliancesExposed": [""],
+  "verdict": "",
+  "rightMove": true
+}
+
+Rules:
+- thoughts must include all 5 castaway names exactly once.
+- thought must be one sentence each.
+- alliancesExposed should list concise alliance truths.
+- verdict should directly say whether the player made the right move and why, and mention whether the player's occupation helped or hurt them socially.
+- narrative should be dramatic but concise (4-7 sentences).
+- Valid JSON only.`;
+
+              const raw = await callClaude({
+                apiKey,
+                system,
+                messages: [{ role: 'user', content: prompt }],
+                maxTokens: 2000,
+                temperature: 0.9
+              });
+
+              const parsed = parseClaudeJson(raw);
+              if (!parsed || typeof parsed !== 'object') {
+                throw new Error('Reveal parse failed');
+              }
+
+              const normalized = {
+                narrative: String(parsed.narrative || '').trim(),
+                thoughts: Array.isArray(parsed.thoughts)
+                  ? parsed.thoughts.map((t) => ({
+                      name: String(t?.name || '').trim(),
+                      thought: String(t?.thought || '').trim()
+                    }))
+                  : [],
+                alliancesExposed: Array.isArray(parsed.alliancesExposed)
+                  ? parsed.alliancesExposed.map((a) => String(a).trim()).filter(Boolean)
+                  : [],
+                verdict: String(parsed.verdict || '').trim(),
+                rightMove: Boolean(parsed.rightMove)
+              };
+
+              setRevealData(normalized);
+            } catch (err) {
+              setRevealData({
+                narrative:
+                  'The torches dimmed, truths spilled out, and everyone had a reason for every lie. Hidden agendas drove every vote, and your social reads shaped the final outcome.',
+                thoughts: castaways.map((c) => ({
+                  name: c.name,
+                  thought: `${c.name} saw you as dangerous enough to watch, but useful enough to keep close until the vote turned.`
+                })),
+                alliancesExposed: castaways
+                  .filter((c) => c.secretAlliances.length)
+                  .map((c) => `${c.name} quietly worked with ${c.secretAlliances.join(' and ')}.`),
+                verdict:
+                  `It was a defensible move, but your influence was obvious and that will raise your threat level next round. Your ${playerOccupation || 'background'} helped in credibility with some players, but also made you easier to profile socially.`,
+                rightMove: true
+              });
+              setError(err.message || 'Reveal generation failed; fallback used.');
+            } finally {
+              setRevealLoading(false);
+              setPhase('reveal');
+            }
+          }
+
+          buildReveal();
+        }, [eliminatedName]);
+
+        function openTribalPhase() {
+          setPhase('tribal');
+          const initialTarget =
+            castaways.map((c) => c.name).find((name) => name !== immuneCastawayName) ||
+            (playerHasImmunity ? '' : playerName);
+          setTribalSelection(initialTarget || '');
+          setTribalHostOpening('');
+          setTribalHostLoading(false);
+          setTribalPublicHistory([]);
+          setTribalChatInput('');
+          setTribalPlayerMessages(0);
+          setTribalVoteCalled(false);
+          setTribalStarted(false);
+          setVotes([]);
+          setRevealedVotesCount(0);
+          setEliminatedName('');
+          setRevealData(null);
+          setError('');
+        }
+
+        function submitNotify(e) {
+          e.preventDefault();
+          if (!notifyEmail.trim()) {
+            setNotifyMessage('Enter an email first.');
+            return;
+          }
+          setNotifyMessage(`Thanks. We'll notify ${notifyEmail.trim()} when the full season drops.`);
+          setNotifyEmail('');
+        }
+
+        const canSendConversation =
+          chatMode === 'campfire'
+            ? conversationInput.trim() && !chatInFlight
+            : selectedCastaway && conversationInput.trim() && !chatInFlight;
+
+        return (
+          <div className="relative min-h-full overflow-x-hidden text-zinc-100">
+            <div className="absolute inset-0 torch-overlay pointer-events-none" />
+            <div className="relative mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+              <header className="mb-8 animate-fadeIn">
+                <div className="flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h1 className="font-display text-5xl tracking-wider text-orange-300 sm:text-6xl">Outwit</h1>
+                    <p className="text-sm uppercase tracking-[0.18em] text-zinc-300/90">
+                      A social deduction campfire built on Claude
+                    </p>
+                  </div>
+                  {phase !== 'dev' && (
+                    <div className="rounded-lg border border-orange-300/20 bg-black/30 px-4 py-2 text-xs text-zinc-300">
+                      <div>Player: {playerName || 'Unknown'}{playerOccupation ? ` (${playerOccupation})` : ''}</div>
+                      <div>Model: {MODEL}</div>
+                    </div>
+                  )}
+                </div>
+              </header>
+
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-400/40 bg-red-900/30 px-4 py-3 text-sm text-red-100 animate-fadeIn">
+                  {error}
+                </div>
+              )}
+
+              {phase === 'dev' && (
+                <section className="mx-auto mt-8 max-w-xl animate-fadeIn">
+                  <div className="rounded-2xl border border-orange-300/30 bg-black/45 p-6 shadow-2xl backdrop-blur">
+                    <div className="mb-4 inline-block rounded-full bg-orange-500/25 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-orange-100 animate-flicker">
+                      Dev Mode / Testing Only
+                    </div>
+                    <h2 className="mb-2 font-display text-3xl tracking-wide text-orange-200">Connect Claude</h2>
+                    <p className="mb-5 text-sm text-zinc-300">
+                      Enter an Anthropic API key for local testing. The key stays in React state for this session only.
+                    </p>
+                    <form onSubmit={handleSaveApiKey} className="space-y-4">
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        placeholder="sk-ant-..."
+                        className="w-full rounded-xl border border-zinc-600/70 bg-zinc-950/80 px-4 py-3 text-sm text-zinc-100 outline-none ring-orange-300/0 transition focus:border-orange-300/70 focus:ring-2"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:brightness-110"
+                      >
+                        Enter the Jungle
+                      </button>
+                    </form>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'meet' && (
+                <section className="mx-auto max-w-2xl animate-fadeIn">
+                  <div className="rounded-2xl border border-emerald-300/20 bg-black/45 p-6 backdrop-blur">
+                    <h2 className="font-display text-4xl tracking-wide text-emerald-200">Phase 1: Meet Your Tribe</h2>
+                    <p className="mt-2 text-sm text-zinc-300">
+                      Enter your name and occupation, then generate five strategic castaways with hidden agendas.
+                    </p>
+
+                    <form onSubmit={generateCastaways} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <input
+                        type="text"
+                        value={playerNameInput}
+                        onChange={(e) => setPlayerNameInput(e.target.value)}
+                        placeholder="Your name"
+                        className="rounded-xl border border-zinc-600/70 bg-zinc-950/80 px-4 py-3 text-sm outline-none ring-emerald-300/0 transition focus:border-emerald-300/70 focus:ring-2"
+                      />
+                      <input
+                        type="text"
+                        value={playerOccupationInput}
+                        onChange={(e) => setPlayerOccupationInput(e.target.value)}
+                        placeholder="Your Occupation"
+                        className="rounded-xl border border-zinc-600/70 bg-zinc-950/80 px-4 py-3 text-sm outline-none ring-emerald-300/0 transition focus:border-emerald-300/70 focus:ring-2"
+                      />
+                      <button
+                        type="submit"
+                        disabled={generatingCastaways}
+                        className="rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-5 py-3 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
+                      >
+                        {generatingCastaways ? 'Summoning Castaways...' : 'Generate Castaways'}
+                      </button>
+                    </form>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'immunity_intro' && (
+                <section className="mx-auto max-w-3xl animate-fadeIn">
+                  <div className="rounded-3xl border border-amber-300/50 bg-gradient-to-br from-amber-900/35 via-yellow-900/20 to-black/70 p-8 text-center shadow-2xl shadow-amber-500/20">
+                    <div className="text-xs uppercase tracking-[0.22em] text-amber-200">Challenge Arena</div>
+                    <h2 className="mt-2 font-display text-6xl tracking-wide text-amber-100">⚡ Immunity Challenge</h2>
+                    <p className="mt-3 text-sm text-amber-100/90">{CHALLENGE_META[immunityType].intro}</p>
+                    <div className="mt-6 text-6xl font-bold text-yellow-200 animate-flicker">{Math.max(0, immunityCountdown)}</div>
+                    <div className="mt-2 text-xs uppercase tracking-[0.2em] text-zinc-300">Get Ready</div>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'immunity_pep' && (
+                <section className="mx-auto max-w-4xl animate-fadeIn">
+                  <div className="rounded-3xl border border-yellow-300/50 bg-black/75 p-10 text-center shadow-2xl shadow-yellow-500/20">
+                    <div className="text-xs uppercase tracking-[0.25em] text-yellow-200">Jeff</div>
+                    <h2 className="mt-2 font-display text-5xl tracking-wide text-yellow-100">Before We Begin</h2>
+                    <div className="mx-auto mt-6 max-w-3xl text-lg font-bold leading-relaxed text-yellow-100">
+                      {immunityPepLoading ? (
+                        <span className="animate-flicker">Tonight, one challenge decides everything...</span>
+                      ) : (
+                        immunityPepTalk
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setPhase('immunity_puzzle')}
+                      disabled={immunityPepLoading}
+                      className="mt-8 rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 px-6 py-3 text-sm font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Let's Go
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'immunity_puzzle' && (
+                <section className="mx-auto max-w-5xl animate-fadeIn">
+                  <div className="rounded-3xl border border-amber-300/45 bg-gradient-to-br from-zinc-950 via-amber-950/25 to-black p-6 sm:p-8">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Immunity Challenge</div>
+                        <h2 className="font-display text-4xl tracking-wide text-yellow-100">{CHALLENGE_META[immunityType].name}</h2>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs uppercase tracking-[0.2em] text-zinc-300">Par Time {CHALLENGE_META[immunityType].par}s</div>
+                        <div className="text-4xl font-bold text-amber-200 animate-flicker">{immunityTimer}s</div>
+                      </div>
+                    </div>
+
+                    {immunityType === 'sliding' && (
+                      <div className="mx-auto grid w-full max-w-sm grid-cols-3 gap-2">
+                        {slidingBoard.map((tile, idx) => (
+                          <button
+                            key={`${tile}-${idx}`}
+                            onClick={() => handleSlidingClick(idx)}
+                            className={`aspect-square rounded-xl border text-2xl font-bold transition ${
+                              tile === 0
+                                ? 'border-zinc-700 bg-zinc-900/30 text-transparent'
+                                : 'border-amber-300/40 bg-amber-600/20 text-amber-100 hover:bg-amber-500/30'
+                            }`}
+                          >
+                            {tile || ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {immunityType === 'memory' && (
+                      <div className="mx-auto grid w-full max-w-2xl grid-cols-4 gap-2">
+                        {memoryDeck.map((card, idx) => (
+                          <button
+                            key={`${card.key}-${card.id}-${idx}`}
+                            onClick={() => handleMemoryClick(idx)}
+                            className="memory-card aspect-square rounded-xl border border-zinc-700 bg-zinc-900/70 p-0"
+                          >
+                            <div className={`memory-card-inner ${(card.flipped || card.matched) ? 'flipped' : ''}`}>
+                              <div className="memory-card-face rounded-xl bg-zinc-900/80 text-2xl">🗿</div>
+                              <div className="memory-card-face memory-card-back rounded-xl border border-amber-300/40 bg-amber-700/25 text-2xl">
+                                {card.icon}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {immunityType === 'cipher' && (
+                      <div className="mx-auto max-w-3xl space-y-4">
+                        <div className="rounded-xl border border-amber-300/30 bg-black/45 p-4 text-center">
+                          <div className="text-xs uppercase tracking-[0.18em] text-zinc-300">Encoded Phrase</div>
+                          <div className="mt-2 text-2xl font-bold tracking-widest text-amber-100">{cipherData.encoded}</div>
+                          <div className="mt-3 text-xs text-zinc-400">Partial Key: {cipherData.key}</div>
+                        </div>
+                        <form onSubmit={submitCipherGuess} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={cipherGuess}
+                            onChange={(e) => setCipherGuess(e.target.value.toUpperCase())}
+                            placeholder="Type decoded phrase..."
+                            className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 outline-none ring-amber-300/0 transition focus:border-amber-300/70 focus:ring-2"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-3 text-sm font-semibold text-zinc-950"
+                          >
+                            Decode
+                          </button>
+                        </form>
+                      </div>
+                    )}
+
+                    {immunityType === 'maze' && (
+                      <div className="mx-auto max-w-xl space-y-4">
+                        <div className="mx-auto grid w-[320px] grid-cols-8">
+                          {mazeGrid.map((row, y) =>
+                            row.map((cell, x) => {
+                              const isPlayer = mazePos.x === x && mazePos.y === y;
+                              const isExit = x === 7 && y === 7;
+                              return (
+                                <div
+                                  key={`${x}-${y}`}
+                                  className={`h-10 w-10 ${isExit ? 'bg-emerald-600/25' : 'bg-zinc-900/70'} ${
+                                    isPlayer ? 'ring-2 ring-yellow-300' : ''
+                                  }`}
+                                  style={{
+                                    borderTop: cell.top ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
+                                    borderRight: cell.right ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
+                                    borderBottom: cell.bottom ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
+                                    borderLeft: cell.left ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent'
+                                  }}
+                                />
+                              );
+                            })
+                          )}
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-2 text-sm">
+                          <button onClick={() => moveMaze(0, -1, 'top')} className="rounded-lg border border-zinc-600 px-3 py-2">
+                            Up
+                          </button>
+                          <button onClick={() => moveMaze(-1, 0, 'left')} className="rounded-lg border border-zinc-600 px-3 py-2">
+                            Left
+                          </button>
+                          <button onClick={() => moveMaze(1, 0, 'right')} className="rounded-lg border border-zinc-600 px-3 py-2">
+                            Right
+                          </button>
+                          <button onClick={() => moveMaze(0, 1, 'bottom')} className="rounded-lg border border-zinc-600 px-3 py-2">
+                            Down
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {immunityType === 'jigsaw' && (
+                      <div className="mx-auto grid w-full max-w-sm grid-cols-3 gap-2">
+                        {jigsawPieces.map((piece, idx) => {
+                          const row = Math.floor(piece / 3) + 1;
+                          const col = (piece % 3) + 1;
+                          const bgCol = piece % 3;
+                          const bgRow = Math.floor(piece / 3);
+                          return (
+                            <button
+                              key={`${piece}-${idx}`}
+                              onClick={() => handleJigsawClick(idx)}
+                              className={`aspect-square rounded-xl border text-sm font-bold ${
+                                jigsawSelected === idx
+                                  ? 'border-yellow-300 bg-yellow-700/35'
+                                  : 'border-amber-300/35 bg-amber-700/20 hover:bg-amber-600/25'
+                              }`}
+                            >
+                              <div
+                                className="h-full w-full rounded-lg"
+                                style={{
+                                  backgroundImage:
+                                    'radial-gradient(circle at 20% 20%, rgba(251,191,36,0.85) 0%, rgba(251,191,36,0.0) 45%), radial-gradient(circle at 80% 25%, rgba(245,158,11,0.8) 0%, rgba(245,158,11,0.0) 40%), linear-gradient(135deg, #4a1d08 0%, #7c2d12 45%, #451a03 100%), repeating-linear-gradient(45deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 9px)',
+                                  backgroundSize: '300% 300%, 300% 300%, 300% 300%, 300% 300%',
+                                  backgroundPosition: `${bgCol * 50}% ${bgRow * 50}%, ${bgCol * 50}% ${bgRow * 50}%, ${bgCol * 50}% ${bgRow * 50}%, ${bgCol * 50}% ${bgRow * 50}%`
+                                }}
+                                title={`R${row}C${col}`}
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="mx-auto mt-6 w-full max-w-3xl rounded-2xl border border-amber-300/30 bg-black/35 p-4">
+                      <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Live Competitors</div>
+                      <div className="mt-3 space-y-3">
+                        {castaways.map((c) => {
+                          const progress = Math.max(0, Math.min(100, castawayRaceProgress[c.name] || 0));
+                          const isWinner = castawayRaceWinner === c.name;
+                          return (
+                            <div key={`race-${c.id}`}>
+                              <div className={`mb-1 flex items-center justify-between text-xs ${isWinner ? 'text-yellow-200' : 'text-zinc-300'}`}>
+                                <span>{c.name}</span>
+                                <span>{Math.floor(progress)}%</span>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    isWinner ? 'bg-yellow-300' : 'bg-amber-400/80'
+                                  }`}
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {castawayRaceWinner && (
+                        <div className="mt-4 rounded-xl border border-yellow-300/50 bg-yellow-700/20 px-3 py-2 text-center text-sm font-semibold text-yellow-100 animate-flicker">
+                          {castawayRaceWinner} wins immunity
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-6 flex justify-center">
+                      <button
+                        onClick={giveUpImmunityChallenge}
+                        className="rounded-xl border border-red-400/50 bg-red-900/30 px-4 py-2 text-sm font-semibold text-red-100"
+                      >
+                        Give Up
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'immunity_result' && immunityResult && (
+                <section className="mx-auto max-w-3xl animate-fadeIn">
+                  <div className="rounded-3xl border border-amber-300/45 bg-black/60 p-8 text-center">
+                    <h2 className="font-display text-5xl tracking-wide text-amber-100">
+                      {immunityResult.won
+                        ? '🏆 You won immunity'
+                        : immunityResult.castawayWinner
+                        ? `🏆 ${immunityResult.castawayWinner} wins immunity`
+                        : '💀 You lost immunity'}
+                    </h2>
+                    <p className="mt-3 text-sm text-zinc-200">
+                      {immunityResult.won
+                        ? 'You cannot be voted out tonight.'
+                        : immunityResult.castawayWinner
+                        ? `You are vulnerable. ${immunityResult.castawayWinner} is safe tonight.`
+                        : 'You are vulnerable at tribal council.'}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Time: {immunityResult.time}s / Par: {CHALLENGE_META[immunityType].par}s
+                    </p>
+                    {!immunityResult.castawayWinner && (
+                      <button
+                        onClick={() => setPhase('convo')}
+                        className="mt-6 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-5 py-3 text-sm font-bold text-zinc-950"
+                      >
+                        Continue to Camp
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {phase === 'convo' && (
+                <section className="space-y-6 animate-fadeIn">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-display text-4xl tracking-wide text-emerald-200">Phase 2: Tribe Conversations</h2>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setChatMode('oneOnOne')}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        chatMode === 'oneOnOne'
+                          ? 'bg-orange-500 text-zinc-950'
+                          : 'border border-zinc-700 bg-black/40 text-zinc-300 hover:border-zinc-500'
+                      }`}
+                    >
+                      1-on-1
+                    </button>
+                    <button
+                      onClick={() => setChatMode('campfire')}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        chatMode === 'campfire'
+                          ? 'bg-orange-500 text-zinc-950'
+                          : 'border border-zinc-700 bg-black/40 text-zinc-300 hover:border-zinc-500'
+                      }`}
+                    >
+                      Campfire 🔥
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="rounded-2xl border border-emerald-300/60 bg-emerald-900/20 p-4 text-left shadow-lg shadow-emerald-700/15">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-semibold text-zinc-100">{playerName || 'You'}</h3>
+                            <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-100">
+                              You
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-zinc-300">{playerOccupation || 'Player'}</p>
+                        </div>
+                      </div>
+                      <span className="mt-3 inline-block rounded-full bg-emerald-700/50 px-3 py-1 text-xs font-medium text-emerald-100">
+                        Human wildcard
+                      </span>
+                    </div>
+                    {castaways.map((c) => (
+                      <div
+                        key={c.id}
+                        onClick={() => setSelectedCastawayId(c.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedCastawayId(c.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          selectedCastawayId === c.id
+                            ? 'border-orange-300/60 bg-orange-700/20 shadow-lg shadow-orange-500/20'
+                            : 'border-zinc-700/70 bg-black/40 hover:border-emerald-300/50 hover:bg-emerald-800/10'
+                        } ${chatMode === 'campfire' && campfireInvites.includes(c.id) ? 'ring-2 ring-emerald-300/70' : ''}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-xl font-semibold text-zinc-100">{c.name}</h3>
+                              {chatMode === 'campfire' && campfireInvites.includes(c.id) && (
+                                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-100">
+                                  Invited
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-sm text-zinc-300">{c.occupation}</p>
+                          </div>
+                          <span className="text-sm text-zinc-300">{c.age}</span>
+                        </div>
+                        <span
+                          className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeColor(
+                            c.personality
+                          )}`}
+                        >
+                          {c.personality}
+                        </span>
+                        {chatMode === 'campfire' && (
+                          <div className="mt-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCampfireInvite(c.id);
+                              }}
+                              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                campfireInvites.includes(c.id)
+                                  ? 'bg-emerald-500/30 text-emerald-100'
+                                  : 'border border-zinc-600 bg-black/30 text-zinc-200 hover:border-zinc-400'
+                              }`}
+                            >
+                              {campfireInvites.includes(c.id) ? 'Invited ✓' : 'Invite'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-2xl border border-zinc-700/60 bg-black/45 p-4">
+                      <h3 className="mb-3 text-lg font-semibold text-orange-200">
+                        {chatMode === 'campfire'
+                          ? 'Campfire'
+                          : selectedCastaway
+                          ? `1-on-1 with ${selectedCastaway.name}`
+                          : 'Select a castaway'}
+                      </h3>
+                      {chatMode === 'campfire' && (
+                        <div className="mb-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300">
+                          {invitedCastawayNames.length > 0
+                            ? `Invited: ${invitedCastawayNames.join(', ')}`
+                            : 'Open Campfire'}
+                        </div>
+                      )}
+
+                      <div
+                        ref={chatScrollRef}
+                        className="h-80 space-y-3 overflow-y-auto rounded-xl border border-zinc-800/70 bg-zinc-950/60 p-3"
+                      >
+                        {chatMode !== 'campfire' && selectedCastaway && selectedHistory.length === 0 && (
+                          <p className="text-sm text-zinc-500">
+                            Start talking. Read between the lines; everyone is playing a game.
+                          </p>
+                        )}
+                        {chatMode === 'campfire' && campfireHistory.length === 0 && (
+                          <p className="text-sm text-zinc-500">
+                            Bring people in or keep it open. Every response lands in front of everyone.
+                          </p>
+                        )}
+
+                        {(chatMode === 'campfire' ? campfireHistory : selectedHistory).map((m) => (
+                            <div
+                              key={m.id}
+                              className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                                m.role === 'user'
+                                  ? 'ml-auto bg-emerald-700/45 text-emerald-50'
+                                  : 'bg-orange-700/35 text-orange-50'
+                              }`}
+                            >
+                              <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-300/90">
+                                {m.role === 'user' ? playerName : m.speaker || selectedCastaway?.name}
+                              </div>
+                              <div className={m.typing ? 'font-medium animate-flicker' : ''}>{m.text}</div>
+                            </div>
+                          ))}
+                      </div>
+
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          type="text"
+                          value={conversationInput}
+                          onChange={(e) => setConversationInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (chatMode === 'campfire') {
+                                sendCampfireConversation();
+                              } else {
+                                sendConversation();
+                              }
+                            }
+                          }}
+                          disabled={(chatMode !== 'campfire' && !selectedCastaway) || chatInFlight}
+                          placeholder={
+                            chatMode === 'campfire'
+                              ? 'Address the campfire...'
+                              : selectedCastaway
+                              ? `Ask ${selectedCastaway.name} something...`
+                              : 'Pick a castaway first...'
+                          }
+                          className="flex-1 rounded-xl border border-zinc-700 bg-zinc-950/80 px-4 py-3 text-sm outline-none ring-orange-300/0 transition focus:border-orange-300/70 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                        <button
+                          onClick={chatMode === 'campfire' ? sendCampfireConversation : sendConversation}
+                          disabled={!canSendConversation}
+                          className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-zinc-700/60 bg-black/45 p-4">
+                      <h3 className="text-lg font-semibold text-emerald-200">Briefing</h3>
+                      <p className="mt-2 text-sm text-zinc-300">
+                        Speak to whoever you want, for as long as you need. Everyone's hiding something. When you think you've figured it out - head to Tribal Council.
+                      </p>
+                      <button
+                        onClick={openTribalPhase}
+                        className="mt-5 w-full rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-4 py-3 text-sm font-bold text-zinc-100 animate-pulseGlow"
+                      >
+                        Head to Tribal Council 🔥
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {phase === 'tribal' && (
+                <section className="min-h-[62vh] animate-fadeIn">
+                  <div className="mx-auto max-w-4xl rounded-3xl border border-orange-300/30 bg-black/75 p-6 backdrop-blur-md sm:p-8">
+                    <h2 className="text-center font-display text-5xl tracking-wider text-orange-200">Tribal Council</h2>
+                    <p className="mt-2 text-center text-sm text-zinc-300">
+                      The torches are lit. Pick one castaway to vote out.
+                    </p>
+
+                    <div
+                      ref={tribalScrollRef}
+                      className="mt-6 max-h-[52vh] space-y-3 overflow-y-auto rounded-2xl border border-zinc-700/70 bg-zinc-950/50 p-4"
+                    >
+                      {tribalHostLoading && tribalPublicHistory.length === 0 && (
+                        <div className="text-center italic text-amber-200 animate-flicker">
+                          The fire pops as the host studies every face...
+                        </div>
+                      )}
+                      {tribalPublicHistory.map((m) => (
+                        <div key={m.id}>
+                          {m.role === 'host' ? (
+                            <div className="mx-auto max-w-[88%] text-center italic text-amber-200">
+                              {m.typing ? <span className="animate-flicker">{m.text}</span> : m.text}
+                            </div>
+                          ) : m.role === 'player' ? (
+                            <div className="ml-auto max-w-[85%] rounded-xl bg-emerald-700/45 px-3 py-2 text-sm text-emerald-50">
+                              <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-300/90">{playerName}</div>
+                              <div>{m.text}</div>
+                            </div>
+                          ) : (
+                            <div className="max-w-[85%] rounded-xl bg-orange-700/35 px-3 py-2 text-sm text-orange-50">
+                              <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-300/90">{m.speaker}</div>
+                              <div className={m.typing ? 'animate-flicker' : ''}>{m.text}</div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {!tribalVoteCalled && !tribalStarted && (
+                      <div className="mt-4">
+                        <div className="mb-2 text-xs text-zinc-400">
+                          Speak into the group. Anyone can jump in, and the host will call the vote when the moment is right.
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={tribalChatInput}
+                            onChange={(e) => setTribalChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                sendTribalMessage();
+                              }
+                            }}
+                            disabled={chatInFlight || tribalHostLoading}
+                            placeholder="What do you say at tribal?"
+                            className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 outline-none ring-orange-300/0 transition focus:border-orange-300/70 focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <button
+                            onClick={sendTribalMessage}
+                            disabled={!tribalChatInput.trim() || chatInFlight || tribalHostLoading}
+                            className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {tribalVoteCalled && !tribalStarted && (
+                      <div className="mt-6 rounded-2xl border border-orange-300/30 bg-black/40 p-4 animate-fadeIn">
+                        <div className="mb-3 text-center text-sm font-semibold uppercase tracking-widest text-orange-200">
+                          Cast Your Vote
+                        </div>
+                        {playerHasImmunity && (
+                          <div className="mb-3 text-center text-xs text-amber-200">
+                            You hold immunity tonight and cannot be voted out.
+                          </div>
+                        )}
+                        {immuneCastawayName && (
+                          <div className="mb-3 text-center text-xs text-amber-200">
+                            {immuneCastawayName} won immunity and cannot be voted out.
+                          </div>
+                        )}
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {[
+                            ...castaways.map((c) => c.name).filter((name) => name !== immuneCastawayName),
+                            ...(playerHasImmunity ? [] : [playerName])
+                          ].map((name) => (
+                            <label
+                              key={name}
+                              className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+                                tribalSelection === name
+                                  ? 'border-orange-300 bg-orange-600/20 text-orange-100'
+                                  : 'border-zinc-700 bg-zinc-900/55 text-zinc-200 hover:border-zinc-500'
+                              }`}
+                            >
+                              <span>{name}</span>
+                              <input
+                                type="radio"
+                                name="tribalVote"
+                                checked={tribalSelection === name}
+                                onChange={() => runTribalCouncil(name)}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {tribalStarted && (
+                      <div className="mt-8 space-y-3">
+                        <h3 className="text-center text-lg font-semibold text-orange-100">Votes are being read...</h3>
+                        <div className="mx-auto max-w-xl space-y-2">
+                          {shownVotes.map((v, idx) => (
+                            <div
+                              key={`${v.name}-${idx}`}
+                              className="rounded-xl border border-orange-300/25 bg-zinc-950/70 px-4 py-3 text-center text-sm animate-fadeIn"
+                            >
+                              <span className="text-zinc-300">{v.name} voted for </span>
+                              <span className="font-semibold text-orange-200">{v.votedFor}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {revealedVotesCount >= votes.length && eliminatedName && (
+                          <div className="mt-6 rounded-2xl border border-red-300/40 bg-red-900/25 p-5 text-center animate-fadeIn">
+                            <div className="text-sm uppercase tracking-widest text-red-200">Eliminated</div>
+                            <div className="mt-2 font-display text-5xl tracking-wide text-red-100">{eliminatedName}</div>
+                            <p className="mt-2 text-sm text-zinc-300">Your vote: {tribalSelection}</p>
+                            <p className="mt-3 text-xs text-zinc-400">
+                              Compiling the truth reveal dossier from every alliance and confession...
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {phase === 'reveal' && (
+                <section className="animate-fadeIn">
+                  <div className="mx-auto max-w-5xl rounded-3xl border border-amber-300/30 dossier p-6 sm:p-8">
+                    <h2 className="font-display text-5xl tracking-wider text-amber-200">Truth Revealed</h2>
+
+                    {revealLoading && (
+                      <div className="mt-5 rounded-xl border border-zinc-700/70 bg-black/45 p-4 text-sm text-zinc-300 animate-flicker">
+                        Opening sealed tribal dossier...
+                      </div>
+                    )}
+
+                    {!revealLoading && revealData && (
+                      <div className="mt-5 space-y-6">
+                        <div className="rounded-2xl border border-amber-200/25 bg-black/40 p-4 text-sm leading-relaxed text-zinc-200">
+                          {revealData.narrative}
+                        </div>
+
+                        <div>
+                          <h3 className="mb-3 text-xl font-semibold text-orange-200">Hidden Agendas Exposed</h3>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            {castaways.map((c) => (
+                              <div key={c.id} className="rounded-xl border border-zinc-700/70 bg-black/35 p-4">
+                                <div className="text-sm font-semibold text-zinc-100">{c.name}</div>
+                                <div className="mt-1 text-sm text-zinc-300">{c.hiddenAgenda}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="mb-3 text-xl font-semibold text-orange-200">Secret Alliances Laid Bare</h3>
+                          <div className="space-y-2">
+                            {revealData.alliancesExposed.length > 0 ? (
+                              revealData.alliancesExposed.map((a, idx) => (
+                                <div key={idx} className="rounded-xl border border-zinc-700/70 bg-black/35 p-3 text-sm text-zinc-200">
+                                  {a}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="rounded-xl border border-zinc-700/70 bg-black/35 p-3 text-sm text-zinc-300">
+                                No durable alliance held once the heat hit tribal.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="mb-3 text-xl font-semibold text-orange-200">What They Really Thought of You</h3>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            {revealData.thoughts.map((t, idx) => (
+                              <div key={`${t.name}-${idx}`} className="rounded-xl border border-zinc-700/70 bg-black/35 p-4">
+                                <div className="text-sm font-semibold text-zinc-100">{t.name}</div>
+                                <div className="mt-1 text-sm text-zinc-300">{t.thought}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-amber-300/35 bg-amber-700/15 p-4">
+                          <div className="text-xs uppercase tracking-widest text-amber-200">Verdict</div>
+                          <div className="mt-2 text-sm text-zinc-100">{revealData.verdict}</div>
+                          <div className="mt-2 text-sm font-semibold text-amber-100">
+                            {revealData.rightMove ? 'You made the right move.' : 'You misread this tribal.'}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setPhase('final')}
+                          className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-3 text-sm font-bold text-zinc-950"
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {phase === 'final' && (
+                <section className="mx-auto mt-10 max-w-xl animate-fadeIn">
+                  <div className="rounded-3xl border border-emerald-300/25 bg-black/55 p-6 text-center backdrop-blur">
+                    <h2 className="font-display text-5xl tracking-wider text-emerald-200">You Survived Tribal Council</h2>
+                    <p className="mt-3 text-sm text-zinc-300">Want to play the full season?</p>
+
+                    <form onSubmit={submitNotify} className="mt-5 space-y-3">
+                      <input
+                        type="email"
+                        value={notifyEmail}
+                        onChange={(e) => setNotifyEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full rounded-xl border border-zinc-600/70 bg-zinc-950/80 px-4 py-3 text-sm outline-none ring-emerald-300/0 transition focus:border-emerald-300/70 focus:ring-2"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-3 text-sm font-bold text-zinc-950"
+                      >
+                        Notify Me
+                      </button>
+                    </form>
+
+                    {notifyMessage && (
+                      <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-900/20 px-4 py-3 text-sm text-emerald-100">
+                        {notifyMessage}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
