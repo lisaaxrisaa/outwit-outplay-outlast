@@ -7,6 +7,7 @@ function json(res, status, body) {
 }
 
 function anthropicMiddleware() {
+  const serverApiKey = (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
   return {
     name: 'anthropic-middleware',
     configureServer(server) {
@@ -33,10 +34,13 @@ function anthropicMiddleware() {
               const parsedBody = JSON.parse(raw || '{}');
               const bodyApiKey = typeof parsedBody.apiKey === 'string' ? parsedBody.apiKey : '';
               const headerApiKey = typeof req.headers['x-api-key'] === 'string' ? req.headers['x-api-key'] : '';
-              const apiKey = (bodyApiKey || headerApiKey || '').trim();
+              const apiKey = (bodyApiKey || headerApiKey || serverApiKey || '').trim();
 
               if (!apiKey) {
-                json(res, 400, { error: 'Missing API key', message: 'Missing API key' });
+                json(res, 400, {
+                  error: 'Missing API key',
+                  message: 'Missing API key. Set ANTHROPIC_API_KEY on the server or pass apiKey in the request.'
+                });
                 return;
               }
 

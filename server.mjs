@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8787;
+const ANTHROPIC_SERVER_API_KEY = (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '').trim();
 
 function sendJson(res, status, body) {
   res.writeHead(status, {
@@ -59,9 +60,12 @@ const server = http.createServer(async (req, res) => {
         const parsedBody = JSON.parse(rawBody || '{}');
         const bodyApiKey = typeof parsedBody.apiKey === 'string' ? parsedBody.apiKey : '';
         const headerApiKey = typeof req.headers['x-api-key'] === 'string' ? req.headers['x-api-key'] : '';
-        const apiKey = (bodyApiKey || headerApiKey || '').trim();
+        const apiKey = (bodyApiKey || headerApiKey || ANTHROPIC_SERVER_API_KEY || '').trim();
         if (!apiKey) {
-          sendJson(res, 400, { error: 'Missing API key', message: 'Missing API key' });
+          sendJson(res, 400, {
+            error: 'Missing API key',
+            message: 'Missing API key. Set ANTHROPIC_API_KEY on the server or pass apiKey in the request.'
+          });
           return;
         }
         if (!/^[\x20-\x7E]+$/.test(apiKey)) {

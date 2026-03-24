@@ -75,23 +75,22 @@ export function getClaudeText(payload) {
 
 export async function callClaude({ apiKey, system, messages, maxTokens = 1000, temperature = 0.9 }) {
   const cleanKey = String(apiKey || '').trim();
-  if (!cleanKey) {
-    throw new Error('Missing Anthropic API key.');
-  }
+
+  const requestPayload = {
+    model: MODEL,
+    max_tokens: maxTokens,
+    temperature,
+    system,
+    messages
+  };
+  if (cleanKey) requestPayload.apiKey = cleanKey;
 
   const response = await fetch(API_ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json'
     },
-    body: JSON.stringify({
-      apiKey: cleanKey,
-      model: MODEL,
-      max_tokens: maxTokens,
-      temperature,
-      system,
-      messages
-    })
+    body: JSON.stringify(requestPayload)
   });
 
   const rawPayload = await response.text();

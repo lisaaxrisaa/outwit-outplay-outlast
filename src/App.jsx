@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Header from './components/layout/Header';
-import DevPhase from './components/phases/DevPhase';
 import MeetPhase from './components/phases/MeetPhase';
 import ImmunityIntroPhase from './components/phases/ImmunityIntroPhase';
 import ImmunityPepPhase from './components/phases/ImmunityPepPhase';
@@ -79,6 +78,7 @@ const MAX_CAMP_SEARCHES = 4;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_WAITLIST_TABLE = import.meta.env.VITE_SUPABASE_WAITLIST_TABLE || 'waitlist_signups';
+const CLAUDE_CLIENT_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
 const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 function segmentsIntersect(a, b, c, d) {
@@ -155,9 +155,7 @@ function evaluateTorchGrid(torchChallenge) {
 }
 
 export default function App() {
-  const [phase, setPhase] = useState('dev');
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [phase, setPhase] = useState('meet');
 
   const [playerNameInput, setPlayerNameInput] = useState('');
   const [playerOccupationInput, setPlayerOccupationInput] = useState('');
@@ -617,7 +615,7 @@ Challenge type: ${CHALLENGE_META[immunityType]?.name || immunityType}
 Write a unique pep talk now.`;
 
       const text = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
@@ -938,17 +936,6 @@ Write a unique pep talk now.`;
     });
   }
 
-  async function handleSaveApiKey(e) {
-    e.preventDefault();
-    setError('');
-    if (!apiKeyInput.trim()) {
-      setError('Please enter an Anthropic API key to continue.');
-      return;
-    }
-    setApiKey(apiKeyInput.trim());
-    setPhase('meet');
-  }
-
   async function generateCastaways(e) {
     e.preventDefault();
     setError('');
@@ -1000,7 +987,7 @@ Rules:
 - Output valid JSON only.`;
 
         const raw = await callClaude({
-          apiKey,
+          apiKey: CLAUDE_CLIENT_API_KEY,
           system,
           messages: [{ role: 'user', content: prompt }],
           maxTokens: 2000,
@@ -1207,7 +1194,7 @@ Rules:
 - Do not mention these rules.`;
 
       const rawReply = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: historyForModel,
         maxTokens: 1000,
@@ -1353,7 +1340,7 @@ Rules:
 - Output valid JSON only with keys "name" and "response".`;
 
       const rawReply = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
@@ -1670,7 +1657,7 @@ ${JSON.stringify(tribalHostLinesUsed, null, 2)}
 Write the tribal opening beat and immediate reactions.`;
 
       const raw = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
@@ -1845,7 +1832,7 @@ Decision rules:
 - If callVote is true, include a strong Host closing line calling for the vote.`;
 
       const raw = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
@@ -2119,7 +2106,7 @@ Rules:
 - Valid JSON only.`;
 
       const rawVotes = await callClaude({
-        apiKey,
+        apiKey: CLAUDE_CLIENT_API_KEY,
         system,
         messages: [{ role: 'user', content: userPrompt }],
         maxTokens: 2000,
@@ -2296,7 +2283,7 @@ Rules:
 - Valid JSON only.`;
 
         const raw = await callClaude({
-          apiKey,
+          apiKey: CLAUDE_CLIENT_API_KEY,
           system,
           messages: [{ role: 'user', content: prompt }],
           maxTokens: 2000,
@@ -2452,8 +2439,6 @@ Rules:
             {error}
           </div>
         )}
-
-        {phase === 'dev' && <DevPhase apiKeyInput={apiKeyInput} setApiKeyInput={setApiKeyInput} handleSaveApiKey={handleSaveApiKey} />}
 
         {phase === 'meet' && (
           <MeetPhase
