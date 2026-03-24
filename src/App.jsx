@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import Header from './components/layout/Header';
 import DevPhase from './components/phases/DevPhase';
 import MeetPhase from './components/phases/MeetPhase';
@@ -12,13 +13,19 @@ import RevealPhase from './components/phases/RevealPhase';
 import FinalPhase from './components/phases/FinalPhase';
 import {
   CHALLENGE_META,
+  SEQUENCE_SYMBOLS,
   badgeColor,
   callClaude,
   createCipherChallenge,
   createJigsawPieces,
   createMaze,
   createMemoryDeck,
+  createRopeUntangleChallenge,
   createSlidingBoard,
+  createSequenceChallenge,
+  createTorchLightingChallenge,
+  createWaterPouringChallenge,
+  getRotatedPipeConnections,
   parseClaudeJson,
   pickChallengeType
 } from './lib/gameUtils';
@@ -68,6 +75,85 @@ const CAMP_ZONES = [
   }
 ];
 
+const MAX_CAMP_SEARCHES = 4;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_WAITLIST_TABLE = import.meta.env.VITE_SUPABASE_WAITLIST_TABLE || 'waitlist_signups';
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+function segmentsIntersect(a, b, c, d) {
+  const cross = (p1, p2, p3) => (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+  const onSegment = (p1, p2, p3) =>
+    Math.min(p1.x, p2.x) <= p3.x && p3.x <= Math.max(p1.x, p2.x) && Math.min(p1.y, p2.y) <= p3.y && p3.y <= Math.max(p1.y, p2.y);
+
+  const d1 = cross(a, b, c);
+  const d2 = cross(a, b, d);
+  const d3 = cross(c, d, a);
+  const d4 = cross(c, d, b);
+
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true;
+  if (d1 === 0 && onSegment(a, b, c)) return true;
+  if (d2 === 0 && onSegment(a, b, d)) return true;
+  if (d3 === 0 && onSegment(c, d, a)) return true;
+  if (d4 === 0 && onSegment(c, d, b)) return true;
+  return false;
+}
+
+function countRopeCrossings(nodes, edges) {
+  const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  let count = 0;
+  for (let i = 0; i < edges.length; i += 1) {
+    for (let j = i + 1; j < edges.length; j += 1) {
+      const [a, b] = edges[i];
+      const [c, d] = edges[j];
+      if (a === c || a === d || b === c || b === d) continue;
+      if (segmentsIntersect(byId[a], byId[b], byId[c], byId[d])) count += 1;
+    }
+  }
+  return count;
+}
+
+function evaluateTorchGrid(torchChallenge) {
+  const { grid, source, torches } = torchChallenge;
+  const height = grid.length;
+  const width = grid[0]?.length || 0;
+  const dirs = {
+    top: [0, -1],
+    right: [1, 0],
+    bottom: [0, 1],
+    left: [-1, 0]
+  };
+  const opposite = {
+    top: 'bottom',
+    right: 'left',
+    bottom: 'top',
+    left: 'right'
+  };
+  const queue = [[source.x, source.y]];
+  const lit = new Set([`${source.x},${source.y}`]);
+
+  while (queue.length) {
+    const [x, y] = queue.shift();
+    const connections = getRotatedPipeConnections(grid[y][x].shape, grid[y][x].rotation);
+    for (const dir of connections) {
+      const [dx, dy] = dirs[dir];
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const neighborConnections = getRotatedPipeConnections(grid[ny][nx].shape, grid[ny][nx].rotation);
+      if (!neighborConnections.includes(opposite[dir])) continue;
+      const key = `${nx},${ny}`;
+      if (lit.has(key)) continue;
+      lit.add(key);
+      queue.push([nx, ny]);
+    }
+  }
+
+  const allTorchesLit = torches.every((torch) => lit.has(`${torch.x},${torch.y}`));
+  const litTorchCount = torches.filter((torch) => lit.has(`${torch.x},${torch.y}`)).length;
+  return { lit, allTorchesLit, litTorchCount };
+}
+
 export default function App() {
   const [phase, setPhase] = useState('dev');
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -103,6 +189,10 @@ export default function App() {
   const [jigsawImageUrl, setJigsawImageUrl] = useState(
     `https://source.unsplash.com/featured/600x600/?tropical,island,jungle&sig=${Date.now()}`
   );
+  const [ropeChallenge, setRopeChallenge] = useState(createRopeUntangleChallenge());
+  const [sequenceChallenge, setSequenceChallenge] = useState(createSequenceChallenge());
+  const [waterChallenge, setWaterChallenge] = useState(createWaterPouringChallenge());
+  const [torchChallenge, setTorchChallenge] = useState(createTorchLightingChallenge());
 
   const [castaways, setCastaways] = useState([]);
   const [selectedCastawayId, setSelectedCastawayId] = useState(null);
@@ -117,13 +207,15 @@ export default function App() {
   const [playerSearchedCamp, setPlayerSearchedCamp] = useState(false);
   const [playerSearchNoticedBy, setPlayerSearchNoticedBy] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
+  const [searchSuspicionScore, setSearchSuspicionScore] = useState(0);
   const [campSearchOpen, setCampSearchOpen] = useState(false);
-  const [campSearchStep, setCampSearchStep] = useState('clue');
-  const [campSearchTimeLeft, setCampSearchTimeLeft] = useState(0);
-  const [campSearchHint, setCampSearchHint] = useState('');
-  const [campSceneUrl, setCampSceneUrl] = useState(
-    `https://source.unsplash.com/featured/1400x900/?jungle,campfire,tropical,island&sig=${Date.now()}`
-  );
+  const [campSearchTurnsLeft, setCampSearchTurnsLeft] = useState(0);
+  const [campSearchEnergy, setCampSearchEnergy] = useState(0);
+  const [campSearchSuspicion, setCampSearchSuspicion] = useState(0);
+  const [campSearchZoneId, setCampSearchZoneId] = useState('');
+  const [campSearchLog, setCampSearchLog] = useState([]);
+  const [idolSearchProgress, setIdolSearchProgress] = useState(0);
+  const [idolSearchClues, setIdolSearchClues] = useState(0);
   const [idolZoneId, setIdolZoneId] = useState('firepit');
   const [clueZoneId, setClueZoneId] = useState('rocks');
   const [fakeIdolZoneId, setFakeIdolZoneId] = useState('shoreline');
@@ -168,6 +260,7 @@ export default function App() {
 
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifyMessage, setNotifyMessage] = useState('');
+  const [notifySubmitting, setNotifySubmitting] = useState(false);
   const [idolPlayTarget, setIdolPlayTarget] = useState('');
   const [idolPlayedByPlayer, setIdolPlayedByPlayer] = useState(false);
   const [idolPlayedFakeByPlayer, setIdolPlayedFakeByPlayer] = useState(false);
@@ -182,6 +275,7 @@ export default function App() {
   const tribalAutoAdvanceTimerRef = useRef(null);
   const chatScrollRef = useRef(null);
   const tribalScrollRef = useRef(null);
+  const campSearchActionLockRef = useRef(false);
 
   const selectedCastaway = useMemo(() => castaways.find((c) => c.id === selectedCastawayId) || null, [castaways, selectedCastawayId]);
   const selectedHistory = useMemo(() => (selectedCastawayId ? conversationHistories[selectedCastawayId] || [] : []), [conversationHistories, selectedCastawayId]);
@@ -189,6 +283,11 @@ export default function App() {
   const invitedCastawayNames = useMemo(() => castaways.filter((c) => campfireInvites.includes(c.id)).map((c) => c.name), [castaways, campfireInvites]);
   const shownVotes = useMemo(() => votes.slice(0, revealedVotesCount), [votes, revealedVotesCount]);
   const idolExists = true;
+  const ropeCrossings = useMemo(
+    () => countRopeCrossings(ropeChallenge.nodes, ropeChallenge.edges),
+    [ropeChallenge]
+  );
+  const torchStatus = useMemo(() => evaluateTorchGrid(torchChallenge), [torchChallenge]);
 
   useEffect(() => {
     return () => {
@@ -209,17 +308,6 @@ export default function App() {
     if (tribalHostOpening || tribalHostLoading) return;
     loadTribalHostOpening();
   }, [phase, tribalHostOpening, tribalHostLoading]);
-
-  useEffect(() => {
-    if (phase !== 'immunity_intro') return;
-    if (immunityCountdown <= 0) {
-      setPhase('immunity_puzzle');
-      setImmunityTimer(0);
-      return;
-    }
-    const id = setTimeout(() => setImmunityCountdown((prev) => prev - 1), 1000);
-    return () => clearTimeout(id);
-  }, [phase, immunityCountdown]);
 
   useEffect(() => {
     if (phase !== 'immunity_pep') return;
@@ -341,14 +429,47 @@ export default function App() {
   }, [phase, immunityType, mazeGrid]);
 
   useEffect(() => {
-    if (!campSearchOpen) return undefined;
-    if (campSearchTimeLeft <= 0) {
-      finishCampSearch(false, 'Time ran out. You return to camp empty-handed, and people noticed you were gone.');
-      return undefined;
+    if (phase !== 'immunity_puzzle' || immunityType !== 'rope') return;
+    if (ropeCrossings === 0) {
+      completeImmunityChallenge(true);
     }
-    const id = setTimeout(() => setCampSearchTimeLeft((prev) => prev - 1), 1000);
+  }, [phase, immunityType, ropeCrossings]);
+
+  useEffect(() => {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'sequence') return;
+    if (sequenceChallenge.phase !== 'show') return;
+    const totalSteps = sequenceChallenge.currentLength * 2;
+    if (sequenceChallenge.flashStep >= totalSteps) {
+      setSequenceChallenge((prev) => ({ ...prev, phase: 'input', flashStep: 0, feedback: '' }));
+      return;
+    }
+    const delay = sequenceChallenge.flashStep % 2 === 0 ? 600 : 180;
+    const id = setTimeout(() => {
+      setSequenceChallenge((prev) => ({ ...prev, flashStep: prev.flashStep + 1 }));
+    }, delay);
     return () => clearTimeout(id);
-  }, [campSearchOpen, campSearchTimeLeft]);
+  }, [phase, immunityType, sequenceChallenge]);
+
+  useEffect(() => {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'sequence') return;
+    if (sequenceChallenge.phase === 'done') {
+      completeImmunityChallenge(true);
+    }
+  }, [phase, immunityType, sequenceChallenge.phase]);
+
+  useEffect(() => {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'water') return;
+    if (waterChallenge.amounts.includes(waterChallenge.target)) {
+      completeImmunityChallenge(true);
+    }
+  }, [phase, immunityType, waterChallenge]);
+
+  useEffect(() => {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'torch') return;
+    if (torchStatus.allTorchesLit) {
+      completeImmunityChallenge(true);
+    }
+  }, [phase, immunityType, torchStatus]);
 
   function pickRandom(arr) {
     if (!arr || !arr.length) return '';
@@ -386,7 +507,18 @@ export default function App() {
 - Player searched camp: ${playerSearchedCamp ? 'yes' : 'no'}
 - Player total searches: ${searchCount}
 - If player searched, noticed by: ${noticed}
-- Search pressure: ${searchCount >= 2 ? 'high suspicion from repeated absences' : searchCount === 1 ? 'some suspicion' : 'no search suspicion yet'}
+- Search suspicion score: ${searchSuspicionScore}/100
+- Search pressure: ${
+      searchSuspicionScore >= 70
+        ? 'very high suspicion from repeated absences'
+        : searchSuspicionScore >= 35
+        ? 'moderate suspicion from idol hunting behavior'
+        : searchCount >= 1
+        ? 'some suspicion'
+        : 'no search suspicion yet'
+    }
+- Idol hunt progress from clues: ${idolSearchProgress}/100
+- Idol hunt strong clues banked: ${idolSearchClues}
 - Idol clue holder: ${castaways.find((c) => c.id === idolClueHolderId)?.name || 'unknown'}
 - Castaway who found clue by searching: ${castawayClueFinderName || 'none'}
 - Real idol currently held by: ${playerHasIdol ? playerName : castawayHasIdolName || 'nobody'}
@@ -451,7 +583,17 @@ Strategic rules:
     setJigsawPieces(createJigsawPieces());
     setJigsawSelected(null);
     setJigsawImageUrl(`https://source.unsplash.com/featured/600x600/?tropical,island,jungle&sig=${Date.now()}-${Math.floor(Math.random() * 100000)}`);
+    setRopeChallenge(createRopeUntangleChallenge());
+    setSequenceChallenge(createSequenceChallenge());
+    setWaterChallenge(createWaterPouringChallenge());
+    setTorchChallenge(createTorchLightingChallenge());
     setPhase('immunity_pep');
+  }
+
+  function startImmunityChallenge() {
+    if (phase !== 'immunity_intro') return;
+    setImmunityTimer(0);
+    setPhase('immunity_puzzle');
   }
 
   async function loadImmunityPepTalk() {
@@ -587,6 +729,113 @@ Write a unique pep talk now.`;
     if (next.every((n, i) => n === i)) {
       completeImmunityChallenge(true);
     }
+  }
+
+  function setRopeNodePosition(nodeId, x, y) {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'rope') return;
+    setRopeChallenge((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              x: Math.max(10, Math.min(90, x)),
+              y: Math.max(10, Math.min(90, y))
+            }
+          : node
+      )
+    }));
+  }
+
+  function handleSequenceClick(symbolKey) {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'sequence') return;
+    setSequenceChallenge((prev) => {
+      if (prev.phase !== 'input') return prev;
+      const expected = prev.sequence[prev.inputIndex];
+      if (symbolKey !== expected) {
+        const nextLength = Math.min(7, prev.currentLength + 1);
+        return {
+          ...prev,
+          currentLength: nextLength,
+          inputIndex: 0,
+          flashStep: 0,
+          phase: nextLength >= 7 ? 'show' : 'show',
+          selectedKeys: [],
+          feedback: 'wrong'
+        };
+      }
+
+      const nextSelected = [...prev.selectedKeys, symbolKey];
+      const nextIndex = prev.inputIndex + 1;
+      if (nextIndex >= prev.currentLength) {
+        if (prev.currentLength >= 7) {
+          return { ...prev, selectedKeys: nextSelected, inputIndex: nextIndex, feedback: 'success', phase: 'done' };
+        }
+        return {
+          ...prev,
+          currentLength: prev.currentLength + 1,
+          inputIndex: 0,
+          flashStep: 0,
+          phase: 'show',
+          selectedKeys: [],
+          feedback: 'success'
+        };
+      }
+
+      return {
+        ...prev,
+        inputIndex: nextIndex,
+        selectedKeys: nextSelected,
+        feedback: 'correct'
+      };
+    });
+  }
+
+  function handleWaterContainerClick(idx) {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'water') return;
+    setWaterChallenge((prev) => {
+      if (prev.selectedFrom === null) {
+        if (prev.amounts[idx] === 0) return prev;
+        return { ...prev, selectedFrom: idx };
+      }
+      if (prev.selectedFrom === idx) {
+        return { ...prev, selectedFrom: null };
+      }
+
+      const from = prev.selectedFrom;
+      const to = idx;
+      const available = prev.amounts[from];
+      const space = prev.capacities[to] - prev.amounts[to];
+      const transfer = Math.min(available, space);
+      if (transfer <= 0) {
+        return { ...prev, selectedFrom: null };
+      }
+      const nextAmounts = [...prev.amounts];
+      nextAmounts[from] -= transfer;
+      nextAmounts[to] += transfer;
+      return {
+        ...prev,
+        amounts: nextAmounts,
+        selectedFrom: null
+      };
+    });
+  }
+
+  function rotateTorchCell(x, y) {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'torch') return;
+    setTorchChallenge((prev) => ({
+      ...prev,
+      grid: prev.grid.map((row, rowIdx) =>
+        row.map((cell, colIdx) =>
+          rowIdx === y && colIdx === x
+            ? {
+                ...cell,
+                rotation: (cell.rotation + 1) % 4
+              }
+            : cell
+        )
+      )
+    }));
   }
 
   function setHistoryMessage(castawayId, messageId, nextText, markDone = false) {
@@ -829,11 +1078,15 @@ Rules:
       setPlayerSearchedCamp(false);
       setPlayerSearchNoticedBy([]);
       setSearchCount(0);
+      setSearchSuspicionScore(0);
       setCampSearchOpen(false);
-      setCampSearchStep('clue');
-      setCampSearchTimeLeft(0);
-      setCampSearchHint('');
-      setCampSceneUrl(`https://source.unsplash.com/featured/1400x900/?jungle,campfire,tropical,island&sig=${Date.now()}-${Math.floor(Math.random() * 100000)}`);
+      setCampSearchTurnsLeft(0);
+      setCampSearchEnergy(0);
+      setCampSearchSuspicion(0);
+      setCampSearchZoneId('');
+      setCampSearchLog([]);
+      setIdolSearchProgress(0);
+      setIdolSearchClues(0);
       setCastawayCurrentlySearching([]);
       setIdolPlayTarget('');
       setIdolPlayedByPlayer(false);
@@ -1190,8 +1443,13 @@ Rules:
   }
 
   function finishCampSearch(foundSomething, revealText) {
+    campSearchActionLockRef.current = false;
     setCampSearchOpen(false);
-    setCampSearchTimeLeft(0);
+    setCampSearchTurnsLeft(0);
+    setCampSearchEnergy(0);
+    setCampSearchSuspicion(0);
+    setCampSearchZoneId('');
+    setCampSearchLog([]);
     if (revealText) {
       setIdolRevealMoment(revealText);
     } else if (!foundSomething) {
@@ -1201,66 +1459,139 @@ Rules:
 
   function searchCamp() {
     if (phase !== 'convo') return;
-    if (playerHasIdol || playerHasFakeIdol || campSearchOpen) return;
+    if (playerHasIdol || campSearchOpen) return;
     const nextSearchCount = searchCount + 1;
     setSearchCount(nextSearchCount);
     setPlayerSearchedCamp(true);
-    const noticedBy = pickRandomMany(
-      castaways.map((c) => c.name).filter((name) => name !== castawayIdolFinderName),
-      1 + Math.floor(Math.random() * 2)
-    );
-    setPlayerSearchNoticedBy((prev) => Array.from(new Set([...prev, ...noticedBy])));
-
-    const firstSearchIsClue = nextSearchCount === 1 && !playerFoundClueScroll;
-    const step = firstSearchIsClue ? 'clue' : 'idol';
-    setCampSearchStep(step);
-    setCampSearchTimeLeft(step === 'clue' ? 30 : 45);
-    if (step === 'clue') {
-      setCampSearchHint('Find the clue scroll before time runs out.');
-    } else if (playerFoundClueScroll || playerHeardIdolClue) {
-      setCampSearchHint(`Use your clue. Search around the ${zoneById(idolZoneId).label}.`);
-    } else {
-      setCampSearchHint('No clue in hand. You are searching blind for a tiny idol hide.');
-    }
-    setCampSceneUrl(`https://source.unsplash.com/featured/1400x900/?jungle,camp,firepit,palm,shore&sig=${Date.now()}-${nextSearchCount}`);
+    setCampSearchTurnsLeft(4);
+    setCampSearchEnergy(100);
+    setCampSearchSuspicion(0);
+    setCampSearchZoneId('');
+    setCampSearchLog(['Pick a zone, then run a quick or thorough search. Thorough search unlocks after you build strong evidence.']);
     setCampSearchOpen(true);
   }
 
-  function handleCampSceneClick(event) {
+  function selectCampSearchZone(zoneId) {
     if (!campSearchOpen) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    setCampSearchZoneId(zoneId);
+  }
 
-    if (campSearchStep === 'clue') {
-      const foundClue = pointHitsZone(x, y, clueZoneId, 3.1);
-      if (!foundClue) return;
-      const clueText = zoneById(idolZoneId).clue;
+  function runCampSearchAction(intensity) {
+    if (!campSearchOpen) return;
+    if (!campSearchZoneId) return;
+    if (campSearchActionLockRef.current) return;
+    if (campSearchTurnsLeft <= 0 || campSearchEnergy <= 0) {
+      finishCampSearch(false, 'You pushed your search too long and returned to camp empty-handed.');
+      return;
+    }
+    campSearchActionLockRef.current = true;
+    try {
+    const zone = zoneById(campSearchZoneId);
+    const isTargetZone = campSearchZoneId === idolZoneId;
+    const isFakeZone = fakeIdolPlanted && campSearchZoneId === fakeIdolZoneId;
+    const canThoroughSearch = idolSearchProgress >= 45 || idolSearchClues >= 1 || playerFoundClueScroll || playerHeardIdolClue;
+    if (intensity === 'thorough' && !canThoroughSearch) return;
+
+    const energyCost = intensity === 'thorough' ? 28 : 18;
+    const suspicionGain = intensity === 'thorough' ? 14 + Math.floor(Math.random() * 7) : 7 + Math.floor(Math.random() * 6);
+    const nextTurns = Math.max(0, campSearchTurnsLeft - 1);
+    const nextEnergy = Math.max(0, campSearchEnergy - energyCost);
+    const nextCampSuspicion = Math.min(100, campSearchSuspicion + suspicionGain);
+    const nextTotalSuspicion = Math.min(100, searchSuspicionScore + suspicionGain);
+
+    let strongChance = isTargetZone ? 0.6 : 0.04;
+    let weakChance = isTargetZone ? 0.34 : 0.28;
+    if (intensity === 'thorough') {
+      strongChance += 0.14;
+      weakChance -= 0.06;
+    }
+    if (playerFoundClueScroll || playerHeardIdolClue || idolSearchClues >= 1) {
+      strongChance += isTargetZone ? 0.1 : 0;
+      weakChance += isTargetZone ? 0.02 : 0;
+    }
+    const roll = Math.random();
+    const clueQuality = roll <= strongChance ? 'strong' : roll <= strongChance + weakChance ? 'weak' : 'none';
+    const confidence = clueQuality === 'strong' ? 'high confidence' : clueQuality === 'weak' ? 'medium confidence' : 'low confidence';
+
+    let clueLine = '';
+    let progressGain = 0;
+    let clueGain = 0;
+    if (clueQuality === 'strong' && isTargetZone) {
+      clueLine = `Strong clue (${confidence}): fresh disturbance near ${zone.label} looks deliberate, not random foot traffic.`;
+      progressGain = intensity === 'thorough' ? 48 : 36;
+      clueGain = 1;
+    } else if (clueQuality === 'weak' && isTargetZone) {
+      clueLine = `Weak clue (${confidence}): something around ${zone.label} looks recently handled, but you cannot confirm yet.`;
+      progressGain = intensity === 'thorough' ? 28 : 18;
+      clueGain = 1;
+    } else if (clueQuality === 'strong') {
+      clueLine = `Strong clue (${confidence}): ${zone.label} has signs worth checking, but it could be a planted decoy.`;
+      progressGain = 4;
+    } else if (clueQuality === 'weak') {
+      clueLine = `Weak clue (${confidence}): subtle marks near ${zone.label}, but it might be ordinary camp activity.`;
+      progressGain = 2;
+    } else {
+      clueLine = `No reliable clue: ${zone.label} turns up mostly noise and dead ends.`;
+      progressGain = 0;
+    }
+
+    const nextProgress = Math.min(100, idolSearchProgress + progressGain);
+    const nextClues = idolSearchClues + clueGain;
+    const witnessCount = suspicionGain >= 20 || nextTotalSuspicion >= 65 ? 2 : 1;
+    const witnessedBy = pickRandomMany(
+      castaways.map((c) => c.name).filter((name) => name !== castawayIdolFinderName),
+      witnessCount
+    );
+
+    setCampSearchTurnsLeft(nextTurns);
+    setCampSearchEnergy(nextEnergy);
+    setCampSearchSuspicion(nextCampSuspicion);
+    setSearchSuspicionScore(nextTotalSuspicion);
+    setIdolSearchProgress(nextProgress);
+    setIdolSearchClues(nextClues);
+    setPlayerSearchNoticedBy((prev) => Array.from(new Set([...prev, ...witnessedBy])));
+    setCampSearchLog((prev) => [
+      ...prev,
+      `(${zone.label}) ${clueLine}`,
+      `Cost: -${energyCost} energy, +${suspicionGain} suspicion. Progress ${nextProgress}/100.`
+    ]);
+
+    if (!playerFoundClueScroll && campSearchZoneId === clueZoneId && clueQuality !== 'none') {
       setPlayerFoundClueScroll(true);
       setPlayerHeardIdolClue(true);
-      finishCampSearch(true, `You found a folded parchment clue: "${clueText}"`);
+      setCampSearchLog((prev) => [...prev, `You recovered a clue scroll: "${zoneById(idolZoneId).clue}"`]);
+    }
+
+    const foundRealIdol = intensity === 'thorough' && isTargetZone && nextProgress >= 90;
+    if (foundRealIdol) {
+      if (castawayHasIdolName) {
+        finishCampSearch(
+          false,
+          `You search ${zone.label} thoroughly and realize someone got there first. The hide is empty and disturbed.`
+        );
+        return;
+      }
+      setPlayerHasIdol(true);
+      finishCampSearch(
+        true,
+        `You find a hidden immunity idol at ${idolLocation}. Keep it secret. You can play it at tribal for yourself or someone else.`
+      );
       return;
     }
 
-    const hasActionableClue = playerFoundClueScroll || playerHeardIdolClue;
-    const idolRadius = hasActionableClue ? 3.2 : 1.0;
-    const foundRealIdol = pointHitsZone(x, y, idolZoneId, idolRadius);
-    const foundFakeIdol = fakeIdolPlanted && pointHitsZone(x, y, fakeIdolZoneId, hasActionableClue ? 2.0 : 1.1);
-
-    if (foundFakeIdol) {
+    const fakeFindRoll = Math.random();
+    if (intensity === 'thorough' && isFakeZone && !playerHasFakeIdol && fakeFindRoll < 0.55) {
       setPlayerHasFakeIdol(true);
       finishCampSearch(true, 'You found something wrapped in twine and cloth. It looks exactly like an idol.');
       return;
     }
 
-    if (!foundRealIdol) return;
-    if (castawayHasIdolName) {
-      finishCampSearch(false, `You dig into the ${zoneById(idolZoneId).label.toLowerCase()} area, but it looks like someone already got there first.`);
-      return;
+    if (nextTurns <= 0 || nextEnergy <= 0) {
+      finishCampSearch(false, `You head back to camp empty-handed. The search drew attention from ${witnessedBy.join(' and ')}.`);
     }
-    setPlayerHasIdol(true);
-    finishCampSearch(true, `You found a hidden immunity idol at ${idolLocation}. Keep it secret. You can play it at tribal for yourself or someone else.`);
+    } finally {
+      campSearchActionLockRef.current = false;
+    }
   }
 
   async function loadTribalHostOpening() {
@@ -1672,7 +2003,7 @@ Decision rules:
   }, [phase, tribalVoteCalled, tribalStarted, tribalHostLoading, chatInFlight, tribalAwaitingPlayer, tribalPublicHistory, tribalPlayerMessages]);
 
   function playPlayerIdol() {
-    if (tribalStarted || tribalVoteCalled) return;
+    if (tribalStarted) return;
     if (!playerHasIdol && !playerHasFakeIdol) return;
     const target = idolPlayTarget || playerName;
     setIdolPlayedByPlayer(true);
@@ -1813,6 +2144,10 @@ Rules:
 
       if (normalizedVotes.length !== 5) {
         throw new Error('Claude vote output failed validation.');
+      }
+      const uniqueVoterCount = new Set(normalizedVotes.map((v) => v.name)).size;
+      if (uniqueVoterCount !== 5) {
+        throw new Error('Claude vote output contained duplicate voters.');
       }
 
       let finalVotes = [...normalizedVotes];
@@ -2068,14 +2403,39 @@ Rules:
     setError('');
   }
 
-  function submitNotify(e) {
+  async function submitNotify(e) {
     e.preventDefault();
-    if (!notifyEmail.trim()) {
+    const normalizedEmail = notifyEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
       setNotifyMessage('Enter an email first.');
       return;
     }
-    setNotifyMessage(`Thanks. We'll notify ${notifyEmail.trim()} when the full season drops.`);
-    setNotifyEmail('');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setNotifyMessage('Enter a valid email address.');
+      return;
+    }
+    if (!supabase) {
+      setNotifyMessage('Email signup is not configured yet. Add Supabase env vars and restart the app.');
+      return;
+    }
+
+    setNotifySubmitting(true);
+    try {
+      const { error } = await supabase.from(SUPABASE_WAITLIST_TABLE).insert([{ email: normalizedEmail }]);
+      if (error?.code === '23505') {
+        setNotifyMessage('You are already on the list.');
+        return;
+      }
+      if (error) {
+        throw error;
+      }
+      setNotifyMessage(`Thanks. We'll notify ${normalizedEmail} when the full season drops.`);
+      setNotifyEmail('');
+    } catch (err) {
+      setNotifyMessage(err?.message ? `Signup failed: ${err.message}` : 'Signup failed. Please try again.');
+    } finally {
+      setNotifySubmitting(false);
+    }
   }
 
   const canSendConversation =
@@ -2106,7 +2466,7 @@ Rules:
           />
         )}
 
-        {phase === 'immunity_intro' && <ImmunityIntroPhase immunityType={immunityType} immunityCountdown={immunityCountdown} />}
+        {phase === 'immunity_intro' && <ImmunityIntroPhase immunityType={immunityType} startImmunityChallenge={startImmunityChallenge} />}
 
         {phase === 'immunity_pep' && (
           <ImmunityPepPhase
@@ -2135,6 +2495,17 @@ Rules:
             jigsawSelected={jigsawSelected}
             handleJigsawClick={handleJigsawClick}
             jigsawImageUrl={jigsawImageUrl}
+            ropeChallenge={ropeChallenge}
+            ropeCrossings={ropeCrossings}
+            setRopeNodePosition={setRopeNodePosition}
+            sequenceChallenge={sequenceChallenge}
+            sequenceSymbols={SEQUENCE_SYMBOLS}
+            handleSequenceClick={handleSequenceClick}
+            waterChallenge={waterChallenge}
+            handleWaterContainerClick={handleWaterContainerClick}
+            torchChallenge={torchChallenge}
+            torchStatus={torchStatus}
+            rotateTorchCell={rotateTorchCell}
             castaways={castaways}
             castawayRaceProgress={castawayRaceProgress}
             castawayRaceWinner={castawayRaceWinner}
@@ -2174,20 +2545,25 @@ Rules:
             playerHasImmunity={playerHasImmunity}
             immuneCastawayName={immuneCastawayName}
             searchCamp={searchCamp}
-            canSearchCamp={!chatInFlight && phase === 'convo' && !campSearchOpen && !playerHasIdol && !playerHasFakeIdol && searchCount < 3}
+            canSearchCamp={!chatInFlight && phase === 'convo' && !campSearchOpen && !playerHasIdol && searchCount < MAX_CAMP_SEARCHES}
             idolRevealMoment={idolRevealMoment}
             dismissIdolReveal={() => setIdolRevealMoment('')}
             searchCount={searchCount}
+            maxCampSearches={MAX_CAMP_SEARCHES}
+            searchSuspicionScore={searchSuspicionScore}
             campSearchOpen={campSearchOpen}
-            campSearchStep={campSearchStep}
-            campSearchTimeLeft={campSearchTimeLeft}
-            campSearchHint={campSearchHint}
-            campSceneUrl={campSceneUrl}
-            idolZoneLabel={zoneById(idolZoneId).label}
-            idolZoneId={idolZoneId}
-            showIdolZoneHint={Boolean(playerFoundClueScroll || playerHeardIdolClue)}
-            onCampSceneClick={handleCampSceneClick}
-            closeCampSearch={() => finishCampSearch(false, 'You returned to camp before finding anything.')}
+            campSearchTurnsLeft={campSearchTurnsLeft}
+            campSearchEnergy={campSearchEnergy}
+            campSearchSuspicion={campSearchSuspicion}
+            campSearchZoneId={campSearchZoneId}
+            campSearchLog={campSearchLog}
+            idolSearchProgress={idolSearchProgress}
+            idolSearchClues={idolSearchClues}
+            campZones={CAMP_ZONES.map((zone) => ({ id: zone.id, label: zone.label }))}
+            canThoroughSearch={idolSearchProgress >= 45 || idolSearchClues >= 1 || playerFoundClueScroll || playerHeardIdolClue}
+            selectCampSearchZone={selectCampSearchZone}
+            runCampSearchAction={runCampSearchAction}
+            closeCampSearch={() => finishCampSearch(false, 'You cut the search short and returned to camp.')}
             showPhaseTwoOnboarding={!phaseTwoOnboardingDismissed}
             dismissPhaseTwoOnboarding={() => setPhaseTwoOnboardingDismissed(true)}
           />
@@ -2234,12 +2610,7 @@ Rules:
         )}
 
         {phase === 'final' && (
-          <FinalPhase
-            notifyEmail={notifyEmail}
-            setNotifyEmail={setNotifyEmail}
-            submitNotify={submitNotify}
-            notifyMessage={notifyMessage}
-          />
+          <FinalPhase notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail} submitNotify={submitNotify} notifyMessage={notifyMessage} notifySubmitting={notifySubmitting} />
         )}
       </div>
     </div>

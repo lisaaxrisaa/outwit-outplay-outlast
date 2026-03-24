@@ -1,14 +1,5 @@
 import React from 'react';
 
-const ZONE_MARKERS = {
-  palm: { x: 17, y: 29 },
-  shelter: { x: 38, y: 24 },
-  well: { x: 57, y: 33 },
-  firepit: { x: 50, y: 53 },
-  rocks: { x: 74, y: 35 },
-  shoreline: { x: 84, y: 66 }
-};
-
 export default function ConversationPhase(props) {
   const {
     castaways,
@@ -38,15 +29,20 @@ export default function ConversationPhase(props) {
     searchCamp,
     canSearchCamp,
     searchCount,
+    maxCampSearches,
+    searchSuspicionScore,
     campSearchOpen,
-    campSearchStep,
-    campSearchTimeLeft,
-    campSearchHint,
-    campSceneUrl,
-    idolZoneLabel,
-    idolZoneId,
-    showIdolZoneHint,
-    onCampSceneClick,
+    campSearchTurnsLeft,
+    campSearchEnergy,
+    campSearchSuspicion,
+    campSearchZoneId,
+    campSearchLog,
+    idolSearchProgress,
+    idolSearchClues,
+    campZones,
+    canThoroughSearch,
+    selectCampSearchZone,
+    runCampSearchAction,
     closeCampSearch,
     idolRevealMoment,
     dismissIdolReveal,
@@ -96,53 +92,80 @@ export default function ConversationPhase(props) {
     <section className="space-y-6 animate-fadeIn">
       {campSearchOpen && (
         <div className="fixed inset-0 z-40 bg-black/85 backdrop-blur-sm">
-          <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-4 py-5 sm:px-6">
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 py-5 sm:px-6">
             <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-300/35 bg-black/65 px-4 py-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-amber-200">Search Camp</div>
-                <div className="text-sm text-zinc-200">
-                  {campSearchStep === 'clue' ? 'Step 1: Find the clue scroll' : 'Step 2: Find the hidden idol'}
+                <div className="text-sm text-zinc-200">Pick a zone, take risks, and build enough evidence to unlock a thorough dig.</div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-right">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Turns</div>
+                  <div className="text-2xl font-bold text-amber-200">{campSearchTurnsLeft}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Energy</div>
+                  <div className="text-2xl font-bold text-emerald-200">{campSearchEnergy}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Suspicion</div>
+                  <div className="text-2xl font-bold text-rose-200">{campSearchSuspicion}</div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs uppercase tracking-[0.18em] text-zinc-400">Time Left</div>
-                <div className="text-3xl font-bold text-amber-200">{campSearchTimeLeft}s</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-700 bg-black/55 p-3 sm:grid-cols-3">
+              {campZones.map((zone) => (
+                <button
+                  key={zone.id}
+                  onClick={() => selectCampSearchZone(zone.id)}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    campSearchZoneId === zone.id
+                      ? 'border-amber-300/80 bg-amber-800/25 text-amber-100'
+                      : 'border-zinc-600 bg-black/35 text-zinc-200 hover:border-zinc-400'
+                  }`}
+                >
+                  {zone.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700 bg-black/55 p-3">
+              <button
+                onClick={() => runCampSearchAction('quick')}
+                disabled={!campSearchZoneId || campSearchTurnsLeft <= 0 || campSearchEnergy <= 0}
+                className="rounded-lg border border-emerald-400/55 bg-emerald-900/25 px-3 py-2 text-sm font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Quick Search
+              </button>
+              <button
+                onClick={() => runCampSearchAction('thorough')}
+                disabled={!campSearchZoneId || !canThoroughSearch || campSearchTurnsLeft <= 0 || campSearchEnergy <= 0}
+                className="rounded-lg border border-amber-400/60 bg-amber-900/20 px-3 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Thorough Search
+              </button>
+              <div className="text-xs text-zinc-300">
+                Thorough unlock: reach 45 progress or bank 1 strong clue. Current progress {idolSearchProgress}/100, clues {idolSearchClues}.
               </div>
             </div>
 
-            <div className="mb-3 rounded-xl border border-zinc-700 bg-black/55 px-4 py-2 text-sm text-zinc-200">
-              {campSearchHint}
-              {campSearchStep === 'idol' && showIdolZoneHint && (
-                <span className="ml-2 rounded-full border border-amber-300/45 bg-amber-700/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-100">
-                  Zone: {idolZoneLabel}
-                </span>
+            <div className="mt-3 min-h-[220px] overflow-y-auto rounded-xl border border-zinc-700 bg-black/55 px-4 py-3">
+              {campSearchLog.length === 0 ? (
+                <div className="text-sm text-zinc-400">No search actions yet.</div>
+              ) : (
+                <div className="space-y-2 text-sm text-zinc-200">
+                  {campSearchLog.map((line, idx) => (
+                    <div key={`${line}-${idx}`} className="rounded-lg border border-zinc-700/80 bg-black/35 px-3 py-2">
+                      {line}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-
-            <button
-              type="button"
-              onClick={onCampSceneClick}
-              className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-amber-300/30 bg-black/50"
-              style={{
-                backgroundImage: `url(${campSceneUrl})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/35" />
-              <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-zinc-600/70 bg-black/65 px-2 py-1 text-[11px] uppercase tracking-[0.15em] text-zinc-200">
-                Jungle Clearing
-              </div>
-              {campSearchStep === 'idol' && showIdolZoneHint && ZONE_MARKERS[idolZoneId] && (
-                <div
-                  className="pointer-events-none absolute h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-200/60 bg-amber-500/15 animate-pulse"
-                  style={{ left: `${ZONE_MARKERS[idolZoneId].x}%`, top: `${ZONE_MARKERS[idolZoneId].y}%` }}
-                />
-              )}
-            </button>
 
             <div className="mt-3 flex items-center justify-between rounded-xl border border-zinc-700 bg-black/55 px-4 py-2">
-              <div className="text-xs text-zinc-400">Click precisely. Misses are silent, and time away raises suspicion.</div>
+              <div className="text-xs text-zinc-300">Each action increases attention. Leave now if the risk is getting too high.</div>
               <button
                 onClick={closeCampSearch}
                 className="rounded-lg border border-zinc-600 bg-black/45 px-3 py-1.5 text-xs font-semibold text-zinc-200"
@@ -164,8 +187,13 @@ export default function ConversationPhase(props) {
           >
             Search Camp
           </button>
-          <span className="text-[11px] uppercase tracking-wide text-zinc-500">{searchCount}x</span>
-          <HelpTip text="Slip away from camp to look for a hidden immunity idol. Your absence won't go unnoticed." />
+          <span className="rounded-full border border-zinc-700 bg-black/45 px-2 py-1 text-[11px] uppercase tracking-wide text-zinc-400">
+            Searches: {searchCount}/{maxCampSearches}
+          </span>
+          <span className="rounded-full border border-rose-500/35 bg-rose-900/20 px-2 py-1 text-[11px] uppercase tracking-wide text-rose-200">
+            Suspicion: {searchSuspicionScore}/100
+          </span>
+          <HelpTip text="Each search trip can expose you. Higher suspicion means more castaways notice your absences and may distrust you." />
         </div>
       </div>
       {idolRevealMoment && (

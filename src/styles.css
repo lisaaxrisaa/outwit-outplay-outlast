@@ -1,0 +1,90 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #1f3b2f 0%, #0c1411 45%, #070908 100%);
+}
+
+.torch-overlay {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(255, 125, 35, 0.22), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0.62) 100%);
+}
+
+.dossier {
+  background: linear-gradient(155deg, rgba(14, 20, 18, 0.97) 0%, rgba(9, 12, 11, 0.96) 100%);
+}
+
+.memory-card {
+  perspective: 1000px;
+}
+
+.memory-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 320ms ease;
+}
+
+.memory-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.memory-card-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+
+.memory-card-back {
+  transform: rotateY(180deg);
+}
+
+.camp-zone-pulse {
+  animation: camp-zone-pulse 1.9s ease-in-out infinite;
+}
+
+.camp-zone-shimmer {
+  animation: camp-zone-shimmer 2.4s linear infinite;
+}
+
+@keyframes camp-zone-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0.2;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.07);
+    opacity: 0.58;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0.2;
+  }
+}
+
+@keyframes camp-zone-shimmer {
+  0% {
+    transform: translate(-130%, -50%) rotate(15deg);
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: translate(130%, -50%) rotate(15deg);
+    opacity: 0;
+  }
+}
