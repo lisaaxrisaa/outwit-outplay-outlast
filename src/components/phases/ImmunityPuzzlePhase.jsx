@@ -545,14 +545,16 @@ export default function ImmunityPuzzlePhase(props) {
                       return (
                         <div
                           key={`${x}-${y}`}
-                          className={`h-10 w-10 ${isExit ? 'bg-emerald-600/25' : 'bg-zinc-900/70'} ${isPlayer ? 'ring-2 ring-yellow-300' : ''}`}
+                          className={`relative flex h-10 w-10 items-center justify-center ${isExit ? 'bg-emerald-600/25' : 'bg-zinc-900/70'} ${isPlayer ? 'ring-2 ring-yellow-300' : ''}`}
                           style={{
                             borderTop: cell.top ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
                             borderRight: cell.right ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
                             borderBottom: cell.bottom ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent',
                             borderLeft: cell.left ? '2px solid rgba(251,191,36,0.45)' : '2px solid transparent'
                           }}
-                        />
+                        >
+                          {isPlayer && <div className="h-5 w-5 rounded-sm border border-yellow-100/70 bg-yellow-300 shadow-[0_0_12px_rgba(253,224,71,0.85)]" />}
+                        </div>
                       );
                     })
                   )}
