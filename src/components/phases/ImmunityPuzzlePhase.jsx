@@ -647,17 +647,53 @@ export default function ImmunityPuzzlePhase(props) {
                 </div>
                 <div className="rounded-2xl border border-amber-300/30 bg-zinc-950/60 p-6 text-center">
                   <div className="text-xs uppercase tracking-[0.2em] text-zinc-300">
-                    {sequenceChallenge.phase === 'show' ? 'Watch The Sequence' : 'Repeat The Sequence'}
+                    {sequenceChallenge.phase === 'show'
+                      ? 'Watch The Sequence'
+                      : sequenceChallenge.phase === 'feedback_wrong'
+                      ? 'Incorrect Input'
+                      : sequenceChallenge.phase === 'feedback_success'
+                      ? 'Round Cleared'
+                      : 'Repeat The Sequence'}
                   </div>
                   <div className="mt-4 flex min-h-28 items-center justify-center rounded-2xl border border-amber-300/20 bg-black/35 text-6xl">
                     {sequenceChallenge.phase === 'show' && sequenceChallenge.flashStep % 2 === 0
                       ? sequenceSymbolMap[sequenceChallenge.sequence[Math.floor(sequenceChallenge.flashStep / 2)]]?.icon || '🔥'
+                      : sequenceChallenge.phase === 'feedback_wrong'
+                      ? sequenceSymbolMap[sequenceChallenge.lastPressedKey]?.icon || '✖'
+                      : sequenceChallenge.phase === 'feedback_success'
+                      ? '✓'
                       : '•'}
                   </div>
-                  <div className="mt-3 text-sm text-zinc-300">
+                  <div
+                    className={`mt-3 text-sm ${
+                      sequenceChallenge.phase === 'feedback_wrong'
+                        ? 'text-red-200'
+                        : sequenceChallenge.phase === 'feedback_success'
+                        ? 'text-emerald-200'
+                        : 'text-zinc-300'
+                    }`}
+                  >
                     {sequenceChallenge.phase === 'show'
                       ? 'Memorize the order as the symbols flash.'
+                      : sequenceChallenge.phase === 'feedback_wrong'
+                      ? 'Wrong symbol. Sequence will replay and the round gets harder.'
+                      : sequenceChallenge.phase === 'feedback_success'
+                      ? 'Correct. Get ready for the next round.'
                       : `Input ${sequenceChallenge.inputIndex + 1} of ${sequenceChallenge.currentLength}`}
+                  </div>
+                  <div className="mt-3 flex min-h-9 items-center justify-center gap-2">
+                    {sequenceChallenge.selectedKeys.length ? (
+                      sequenceChallenge.selectedKeys.map((key, idx) => (
+                        <div
+                          key={`selected-seq-${key}-${idx}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-300/55 bg-emerald-600/20 text-lg"
+                        >
+                          {sequenceSymbolMap[key]?.icon || '•'}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs uppercase tracking-[0.16em] text-zinc-500">No Inputs Yet</div>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -665,13 +701,17 @@ export default function ImmunityPuzzlePhase(props) {
                     const used = countSelected(symbol.key);
                     const targetUsed = sequenceChallenge.selectedKeys.filter((_, idx) => sequenceChallenge.sequence[idx] === symbol.key).length;
                     const isCorrect = used > 0 && used === targetUsed;
+                    const isWrongFlash = sequenceChallenge.phase === 'feedback_wrong' && sequenceChallenge.lastPressedKey === symbol.key;
+                    const isRightFlash = sequenceChallenge.lastPressedCorrect && sequenceChallenge.lastPressedKey === symbol.key;
                     return (
                       <button
                         key={symbol.key}
                         onClick={() => handleSequenceClick(symbol.key)}
                         disabled={sequenceChallenge.phase !== 'input'}
                         className={`rounded-2xl border px-4 py-5 text-center transition ${
-                          isCorrect
+                          isWrongFlash
+                            ? 'border-red-300/75 bg-red-700/25'
+                            : isRightFlash || isCorrect
                             ? 'border-emerald-300/70 bg-emerald-600/20'
                             : 'border-amber-300/35 bg-zinc-900/65 hover:bg-zinc-800/80'
                         } ${sequenceChallenge.phase !== 'input' ? 'cursor-not-allowed opacity-60' : ''}`}

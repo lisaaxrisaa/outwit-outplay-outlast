@@ -360,7 +360,10 @@ export function createSequenceChallenge() {
     flashStep: 0,
     phase: 'show',
     selectedKeys: [],
-    feedback: ''
+    feedback: '',
+    lastPressedKey: '',
+    lastPressedCorrect: null,
+    pendingLength: null
   };
 }
 

@@ -438,7 +438,14 @@ export default function App() {
     if (sequenceChallenge.phase !== 'show') return;
     const totalSteps = sequenceChallenge.currentLength * 2;
     if (sequenceChallenge.flashStep >= totalSteps) {
-      setSequenceChallenge((prev) => ({ ...prev, phase: 'input', flashStep: 0, feedback: '' }));
+      setSequenceChallenge((prev) => ({
+        ...prev,
+        phase: 'input',
+        flashStep: 0,
+        feedback: '',
+        lastPressedKey: '',
+        lastPressedCorrect: null
+      }));
       return;
     }
     const delay = sequenceChallenge.flashStep % 2 === 0 ? 600 : 180;
@@ -447,6 +454,26 @@ export default function App() {
     }, delay);
     return () => clearTimeout(id);
   }, [phase, immunityType, sequenceChallenge]);
+
+  useEffect(() => {
+    if (phase !== 'immunity_puzzle' || immunityType !== 'sequence') return;
+    if (sequenceChallenge.phase !== 'feedback_wrong' && sequenceChallenge.phase !== 'feedback_success') return;
+    const id = setTimeout(() => {
+      setSequenceChallenge((prev) => ({
+        ...prev,
+        currentLength: prev.pendingLength || prev.currentLength,
+        inputIndex: 0,
+        flashStep: 0,
+        phase: 'show',
+        selectedKeys: [],
+        feedback: '',
+        pendingLength: null,
+        lastPressedKey: '',
+        lastPressedCorrect: null
+      }));
+    }, sequenceChallenge.phase === 'feedback_wrong' ? 950 : 700);
+    return () => clearTimeout(id);
+  }, [phase, immunityType, sequenceChallenge.phase, sequenceChallenge.pendingLength]);
 
   useEffect(() => {
     if (phase !== 'immunity_puzzle' || immunityType !== 'sequence') return;
@@ -754,12 +781,11 @@ Write a unique pep talk now.`;
         const nextLength = Math.min(7, prev.currentLength + 1);
         return {
           ...prev,
-          currentLength: nextLength,
-          inputIndex: 0,
-          flashStep: 0,
-          phase: nextLength >= 7 ? 'show' : 'show',
-          selectedKeys: [],
-          feedback: 'wrong'
+          phase: 'feedback_wrong',
+          pendingLength: nextLength,
+          feedback: 'wrong',
+          lastPressedKey: symbolKey,
+          lastPressedCorrect: false
         };
       }
 
@@ -767,16 +793,26 @@ Write a unique pep talk now.`;
       const nextIndex = prev.inputIndex + 1;
       if (nextIndex >= prev.currentLength) {
         if (prev.currentLength >= 7) {
-          return { ...prev, selectedKeys: nextSelected, inputIndex: nextIndex, feedback: 'success', phase: 'done' };
+          return {
+            ...prev,
+            selectedKeys: nextSelected,
+            inputIndex: nextIndex,
+            feedback: 'success',
+            phase: 'done',
+            lastPressedKey: symbolKey,
+            lastPressedCorrect: true,
+            pendingLength: null
+          };
         }
         return {
           ...prev,
-          currentLength: prev.currentLength + 1,
-          inputIndex: 0,
-          flashStep: 0,
-          phase: 'show',
-          selectedKeys: [],
-          feedback: 'success'
+          selectedKeys: nextSelected,
+          inputIndex: nextIndex,
+          phase: 'feedback_success',
+          pendingLength: prev.currentLength + 1,
+          feedback: 'round_clear',
+          lastPressedKey: symbolKey,
+          lastPressedCorrect: true
         };
       }
 
@@ -784,7 +820,9 @@ Write a unique pep talk now.`;
         ...prev,
         inputIndex: nextIndex,
         selectedKeys: nextSelected,
-        feedback: 'correct'
+        feedback: 'correct',
+        lastPressedKey: symbolKey,
+        lastPressedCorrect: true
       };
     });
   }
