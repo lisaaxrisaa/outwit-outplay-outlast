@@ -368,6 +368,7 @@ export default function ImmunityPuzzlePhase(props) {
     jigsawSelected,
     handleJigsawClick,
     jigsawImageUrl,
+    refreshJigsawImage,
     castaways,
     castawayRaceProgress,
     castawayRaceWinner,
@@ -577,6 +578,7 @@ export default function ImmunityPuzzlePhase(props) {
                     alt="Puzzle reference"
                     className="h-14 w-14 rounded-md border border-amber-300/35 object-cover"
                     loading="eager"
+                    onError={refreshJigsawImage}
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-2">

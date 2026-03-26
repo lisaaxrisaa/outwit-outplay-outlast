@@ -75,11 +75,27 @@ const CAMP_ZONES = [
 ];
 
 const MAX_CAMP_SEARCHES = 4;
+const JIGSAW_IMAGE_POOL = [
+  'https://picsum.photos/seed/outwit-jigsaw-01/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-02/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-03/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-04/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-05/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-06/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-07/600/600',
+  'https://picsum.photos/seed/outwit-jigsaw-08/600/600'
+];
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_WAITLIST_TABLE = import.meta.env.VITE_SUPABASE_WAITLIST_TABLE || 'waitlist_signups';
 const CLAUDE_CLIENT_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
 const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+function pickRandomJigsawImage(excludeUrl = '') {
+  const filtered = JIGSAW_IMAGE_POOL.filter((url) => url !== excludeUrl);
+  const pool = filtered.length ? filtered : JIGSAW_IMAGE_POOL;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 function segmentsIntersect(a, b, c, d) {
   const cross = (p1, p2, p3) => (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
@@ -184,9 +200,7 @@ export default function App() {
   const [mazePos, setMazePos] = useState({ x: 0, y: 0 });
   const [jigsawPieces, setJigsawPieces] = useState(createJigsawPieces());
   const [jigsawSelected, setJigsawSelected] = useState(null);
-  const [jigsawImageUrl, setJigsawImageUrl] = useState(
-    `https://source.unsplash.com/featured/600x600/?tropical,island,jungle&sig=${Date.now()}`
-  );
+  const [jigsawImageUrl, setJigsawImageUrl] = useState(() => pickRandomJigsawImage());
   const [ropeChallenge, setRopeChallenge] = useState(createRopeUntangleChallenge());
   const [sequenceChallenge, setSequenceChallenge] = useState(createSequenceChallenge());
   const [waterChallenge, setWaterChallenge] = useState(createWaterPouringChallenge());
@@ -607,7 +621,7 @@ Strategic rules:
     setMazePos({ x: 0, y: 0 });
     setJigsawPieces(createJigsawPieces());
     setJigsawSelected(null);
-    setJigsawImageUrl(`https://source.unsplash.com/featured/600x600/?tropical,island,jungle&sig=${Date.now()}-${Math.floor(Math.random() * 100000)}`);
+    setJigsawImageUrl((prev) => pickRandomJigsawImage(prev));
     setRopeChallenge(createRopeUntangleChallenge());
     setSequenceChallenge(createSequenceChallenge());
     setWaterChallenge(createWaterPouringChallenge());
@@ -754,6 +768,10 @@ Write a unique pep talk now.`;
     if (next.every((n, i) => n === i)) {
       completeImmunityChallenge(true);
     }
+  }
+
+  function refreshJigsawImage() {
+    setJigsawImageUrl((prev) => pickRandomJigsawImage(prev));
   }
 
   function setRopeNodePosition(nodeId, x, y) {
@@ -1649,23 +1667,46 @@ Rules:
 
       const system = `You are orchestrating a Survivor-style tribal council as a live group conversation around the fire.
 
-Rules:
-- Host voice is sharp, observational, slightly theatrical.
+Session-shaping requirement:
+- Every tribal must feel unique to this exact game history, not like a reusable script.
+- Before writing anything, secretly make 3 decisions and let them shape the whole session:
+  1) Dominant camp emotion tonight (pick one): paranoia, overconfidence, desperation, betrayal, relief, suspicion, solidarity cracking under pressure.
+  2) Unexpected voice: choose one castaway who has been quieter/agreeable and make them say something surprising at tribal.
+  3) Unspoken subtext: choose one underlying truth everyone senses but avoids naming directly until pressure cracks it open.
+
+Core rules:
+- Host voice is sharp, observational, and adaptive (sometimes surgical, sometimes provocative, sometimes hands-off).
 - Host never reveals hidden agendas directly.
 - Keep opening to 2-3 sentences.
 - Host should reference whether the player won or lost immunity and how it shifts pressure.
 - Immediately after the Host opening, include 1-2 castaway reactions.
 - Castaways react naturally to each other and to tension in the room.
-- Host and castaway observations must be tied to concrete events from this specific game history (real quotes, hesitations, contradictions, alliance signals).
-- Avoid generic observations that could fit any game.
-- Do not repeat an observation angle once it has already been used in this session; push the conversation into new territory.
-- Castaways should react through their personality lens rather than sounding interchangeable.
-- Castaways already know who is immune and must strategize accordingly:
-  - Immunity only means that person cannot receive votes tonight.
-  - The immune person still votes, still influences outcomes, and can be a swing vote.
-  - Nobody pushes voting for the immune person.
-  - If an immune name comes up, someone should correct and redirect.
-  - If immunity disrupted plans, reactions should show scrambling, confidence swings, or opportunism.
+- Ground every line in specific moments from this game history (quotes, contradictions, absences, alliance behavior, hesitations).
+- If there is no specific grounded reference for a castaway line, keep that castaway quiet.
+- Castaways should react through personality differences and not sound interchangeable.
+
+Anti-repetition requirements:
+- Avoid repeating rhetorical moves within this tribal session and avoid stale recurring tribal patterns.
+- "You've been quiet" observation: at most once per session.
+- "We all know why we're really here" implication: at most once per session.
+- Loyalty self-defense: after two castaways do this, further attempts should be challenged as rehearsed.
+- Calling the player a strategic/smart threat is allowed only when grounded in a specific player action from this game.
+- Ban generic catchphrases from castaways (for example: "I'm here to play the game", "trust is everything out here", "expect the unexpected").
+
+Power-dynamic requirement:
+- Secretly weight one dynamic and commit to it for this session:
+  1) player is clearly on the bottom
+  2) player has more power than they realize
+  3) real target is not the public target
+  4) alliance crack goes public unexpectedly
+
+Immunity constraints:
+- Immunity only means that person cannot receive votes tonight.
+- The immune person still votes, still influences outcomes, and can be courted as a key vote.
+- Nobody pushes voting for the immune person.
+- If an immune name comes up, someone should correct and redirect.
+
+Output constraints:
 - Return strict JSON only, no markdown.
 ${buildIdolContext()}
 - Host lines already used this session must never be repeated or closely paraphrased.
@@ -1779,54 +1820,52 @@ Write the tribal opening beat and immediate reactions.`;
 
       const system = `You simulate an active Survivor-style tribal council group conversation.
 
+Session-level uniqueness mandate:
+- This tribal must feel like a unique episode shaped by this specific game history.
+- Maintain consistency with 3 secret session decisions:
+  1) dominant emotion in camp tonight (paranoia / overconfidence / desperation / betrayal / relief / suspicion / solidarity cracking under pressure)
+  2) unexpected voice (a quieter or agreeable castaway says something surprising)
+  3) unspoken subtext everyone is circling before it is finally exposed
+
 Core behavior:
 - Every castaway at tribal council is fighting for their own survival tonight.
-- Castaways are active players making strategic moves in real time, not passive commentators.
-- The player is one person in a room full of people trying to survive; heat should move around naturally.
-- Account for immunity status. If the player won immunity, castaways know the player cannot be voted out and redirect strategy accordingly.
-- Sometimes the player is the center, sometimes castaways clash with each other, sometimes a surprise name shifts momentum.
-- Every observation must be specific to this game's actual history (real contradictions, private/public mismatches, hesitations, and alliance behavior), not generic tribal tropes.
-- Do not repeat callout phrasing or the same observational angle once it has been used; each beat should add new information or pressure.
+- Castaways are active strategic players, not passive commentators.
+- The player is one person in a volatile room; pressure should move naturally.
+- Every line must be grounded in specific moments from this game (actual statements, contradictions, absences, alliance behavior, hesitations).
+- If a castaway cannot produce a specific grounded reference, that castaway should stay quiet.
 - Castaway perspective should reflect personality differences: strategic players track inconsistency, social players track emotional shifts, quiet observers track interaction patterns.
-- Immunity is non-negotiable strategic reality:
-  - Immunity only blocks votes against that person tonight.
-  - The immune person still votes, still matters politically, and can be the deciding vote.
-  - Strategizing with an immune person is valid and smart; nobody should treat that as irrational.
-  - No castaway suggests voting out the immune person.
-  - If the player pushes an immune name, castaways/host correct and move on.
-  - Castaways aligned with the immune person may act safer and more aggressive.
-  - Castaways who planned to target the immune person should show uncertainty and active pivoting.
-  - Conversation should focus on viable targets given who is safe tonight.
 
-Castaway strategic behavior:
-- Castaways who feel safe are quietly confident and may take a subtle shot at a rival (planting seeds, lightly throwing someone under the bus).
-- Castaways who feel threatened deflect and redirect attention by highlighting suspicious behavior from someone else.
-- Castaways in secret alliances protect allies subtly and reinforce pressure on shared enemies without making loyalty obvious.
-- Castaways should disagree with each other, not just with the player.
-- Alliances should show subtle cracks under pressure; someone may reveal too much and someone else may call it out.
+Anti-repetition constraints:
+- Never recycle the same rhetorical move repeatedly within this session.
+- "You've been quiet" observation: maximum once per session.
+- "We all know why we're really here" implication: maximum once per session.
+- Loyalty self-defense can happen at most twice; additional attempts should be challenged as sounding rehearsed.
+- Calling the player a smart/strategic threat is allowed only when tied to a specific player action from this game.
+- Ban generic catchphrase dialogue from castaways (for example: "I'm here to play the game", "trust is everything out here", "expect the unexpected").
 
-Host behavior:
-- The Host is sharp and theatrical, never directly revealing hidden agendas.
-- The Host reads room energy and steers toward whoever is squirming most, not always the player.
-- If two castaways are tense with each other, the Host leans in.
-- If someone goes suspiciously quiet, the Host calls it out by name.
+Power dynamic and host variety:
+- Commit to one dynamic for this session and let it drive interactions:
+  1) player clearly on the bottom
+  2) player has more power than they realize
+  3) real target differs from public target
+  4) alliance crack goes public unexpectedly
+- Vary host interrogation style naturally (surgical and precise, provocative and chaotic, or mostly hands-off until key moment).
 
-Session dynamic (secret):
-- At the start of each tribal session, secretly choose ONE social dynamic and keep it consistent throughout the session:
-1) Unified target
-2) Split camp
-3) Chaos
-4) Quiet threat
-- The player must not be told which dynamic is active.
-- By the time the vote is called, outcome should feel genuinely uncertain, not like the player was always the obvious target.
+Immunity is non-negotiable:
+- Immunity only blocks votes against that person tonight.
+- The immune person still votes and can be a deciding vote.
+- Strategizing with an immune person is rational.
+- Nobody suggests voting out the immune person.
+- If an immune name is raised, castaways/host correct and redirect.
+- Conversation should focus on viable targets given who is safe.
 
 Conversation rules:
 - This is a flowing group chat around the fire.
 - Castaways react to each other and to the player.
-- Host speaks only when natural: redirecting, stirring pressure, or pressing revealing tension.
-- If the Host directly addresses a castaway by name, that castaway answers automatically in this same turn.
-- After that direct answer, 1-2 other castaways may react briefly.
-- The player is only expected to answer when addressed by name.
+- Host speaks when natural: pressing tension, redirecting, or exposing cracks.
+- If Host directly addresses a castaway by name, that castaway answers in this same turn.
+- After that answer, 1-2 other castaways may react briefly.
+- Player is expected to answer only when addressed by name.
 - Castaways may lie, deflect, perform loyalty, or crack.
 - Never reveal hidden agendas directly.
 - Keep each line concise: Host 1-2 sentences, castaways 1-3 sentences.
@@ -2103,6 +2142,36 @@ Decision rules:
 
       const system = `You simulate strategic Survivor-style voting behavior.
 
+Core principle:
+- Player words and actions must have direct, measurable impact on castaway votes when they were specific and credible.
+- Each castaway starts with a default vote based on hidden agenda/alliances, then that default may move only when player interactions justify movement.
+- Vague small talk does not move votes.
+
+Mandatory per-castaway evaluation before deciding each vote:
+- Review this castaway's full player interaction across 1-on-1, campfire, and tribal.
+- Determine whether the player made a specific deal or voting promise with this castaway, and whether this castaway should honor or break it.
+- Determine whether the player exposed this castaway in contradiction, and whether that makes the player respected, feared, or targeted.
+- Determine whether the player planted doubt about a rival, and whether that doubt was credible given prior suspicion.
+- Determine whether the player overexposed strategy/alliance/target and became a threat.
+- Determine whether the player was vague/disengaged and therefore earned no influence.
+- Determine whether the player's persuasion matched this castaway's psychology and personality.
+
+Persuasion thresholds by personality:
+- Loyal/straightforward: tends to honor explicit deals unless there is overwhelming counter-pressure.
+- Calculating/strategic: honors deals only while it serves their game; flips when the math changes.
+- Social/charmer: moved by authenticity and emotional trust; repelled by rehearsed/fake tone.
+- Paranoid/suspicious: hard to fully win, but highly responsive to credible fear about others.
+
+Deal handling:
+- Treat explicit player-castaway voting agreements as binding data points.
+- A deal can be honored or betrayed, but betrayal must be grounded in specific game evidence.
+- Public tribal contradictions can override private trust and should materially shift votes.
+
+Tribal weighting:
+- Public tribal statements carry extra influence because all castaways witness them.
+- Strong tribal positioning can shift multiple castaways.
+- Weak or contradictory tribal performance can lose votes quickly.
+
 Immunity rule:
 - Immunity only means that person cannot receive votes tonight.
 - The immune person still votes and can be a decisive swing vote.
@@ -2136,7 +2205,13 @@ Rules:
 - votedFor cannot be themselves.
 - If player has immunity, no vote can be for "${playerName}".
 - If a castaway has immunity, no vote can be for that castaway.
-- Votes must reflect full 1-on-1, campfire, and tribal history.
+- Votes must reflect full 1-on-1, campfire, and tribal history with explicit weighting for what the player said.
+- For each castaway, internally compute:
+  - default vote before player influence
+  - player influence delta from concrete moments (deal, contradiction pressure, doubt planting, trust building, strategic self-exposure, tribal performance)
+  - final vote after that delta
+- If there was no specific player influence on a castaway, keep their default-interest vote.
+- If the player made an explicit deal with a castaway, that deal must materially affect their vote decision (honor or betrayal with specific reason).
 - Honor alliance/voting plans castaways made with the player unless a specific tribal moment changed the calculus.
 - Blindsides are allowed only if grounded in a real tribal moment that changed calculus.
 - Set flipped=true if this castaway voted against what they told the player.
@@ -2293,7 +2368,23 @@ Rules:
           }))
         };
 
-        const system = 'You write strategic post-tribal reveals for a Survivor-style game. Return strict JSON only, no markdown.';
+        const system = `You write strategic post-tribal reveals for a Survivor-style game.
+
+The reveal must feel like director's commentary on the player's exact game, not a generic summary.
+- For each castaway, explain:
+  1) what they were originally planning to do,
+  2) what the player said or failed to say that moved or failed to move them,
+  3) the specific moment that sealed their vote.
+- Explicit voting deals between player and castaways must be surfaced as concrete truth:
+  - who made the deal,
+  - what was promised,
+  - whether it was honored or betrayed,
+  - why.
+- If the player made a brilliant move, name it precisely.
+- If the player made a fatal mistake, name it precisely.
+- The verdict must be personal and specific, tied to exact moments in this session.
+
+Return strict JSON only, no markdown.`;
         const prompt = `Generate a post-tribal truth reveal from this game state:
 ${JSON.stringify(payload, null, 2)}
 
@@ -2315,8 +2406,9 @@ Rules:
 - flippedCallouts should include only castaways who flipped against what they told the player.
 - For each flipped callout, explicitly state what they told the player, what they actually did, and why.
 - idolStory must explain full idol arc: who had clue, who found real/fake idol, who played or held it, and how it changed or did not change outcome.
+- Include all explicit player-castaway voting deals in alliancesExposed or flippedCallouts (honored or betrayed) with concrete reasons.
 - If player had an idol and did not play it and got eliminated, call it out directly in verdict.
-- verdict should directly say whether the player made the right move and why, and mention whether the player's occupation helped or hurt them socially.
+- verdict should directly say whether the player made the right move and why, mention whether the player's occupation helped or hurt socially, and cite at least one decisive quote/moment from this game.
 - narrative should be dramatic but concise (4-7 sentences).
 - Valid JSON only.`;
 
@@ -2518,6 +2610,7 @@ Rules:
             jigsawSelected={jigsawSelected}
             handleJigsawClick={handleJigsawClick}
             jigsawImageUrl={jigsawImageUrl}
+            refreshJigsawImage={refreshJigsawImage}
             ropeChallenge={ropeChallenge}
             ropeCrossings={ropeCrossings}
             setRopeNodePosition={setRopeNodePosition}
