@@ -9,6 +9,8 @@ import ImmunityResultPhase from './components/phases/ImmunityResultPhase';
 import ConversationPhase from './components/phases/ConversationPhase';
 import TribalPhase from './components/phases/TribalPhase';
 import RevealPhase from './components/phases/RevealPhase';
+import BetweenRoundsPhase from './components/phases/BetweenRoundsPhase';
+import GameSummaryPhase from './components/phases/GameSummaryPhase';
 import FinalPhase from './components/phases/FinalPhase';
 import {
   CHALLENGE_META,
@@ -75,6 +77,8 @@ const CAMP_ZONES = [
 ];
 
 const MAX_CAMP_SEARCHES = 4;
+const CASTAWAY_COUNT = 8;
+const TOTAL_ROUNDS = 2;
 const JIGSAW_IMAGE_POOL = [
   'https://picsum.photos/seed/outwit-jigsaw-01/600/600',
   'https://picsum.photos/seed/outwit-jigsaw-02/600/600',
@@ -269,6 +273,18 @@ export default function App() {
 
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealData, setRevealData] = useState(null);
+  const [currentRound, setCurrentRound] = useState(1);
+  const [roundChallengeTypes, setRoundChallengeTypes] = useState({});
+  const [roundRecap, setRoundRecap] = useState([]);
+  const [roundHistoryArchive, setRoundHistoryArchive] = useState([]);
+  const [betweenRoundBriefLoading, setBetweenRoundBriefLoading] = useState(false);
+  const [betweenRoundSummary, setBetweenRoundSummary] = useState('');
+  const [betweenRoundLinks, setBetweenRoundLinks] = useState([]);
+  const [finalGameSummary, setFinalGameSummary] = useState('');
+  const [socialObservations, setSocialObservations] = useState([]);
+  const [socialAmbientNotices, setSocialAmbientNotices] = useState([]);
+  const [lastObservedOneOnOneKey, setLastObservedOneOnOneKey] = useState('');
+  const [relationshipIntelByName, setRelationshipIntelByName] = useState({});
 
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifyMessage, setNotifyMessage] = useState('');
@@ -510,6 +526,25 @@ export default function App() {
     }
   }, [phase, immunityType, torchStatus]);
 
+  useEffect(() => {
+    if (phase !== 'convo' || castaways.length < 3) return;
+    const id = setInterval(() => {
+      if (Math.random() > 0.42) return;
+      const pair = pickRandomMany(castaways, 2);
+      if (pair.length < 2) return;
+      const [a, b] = pair;
+      const text = `${a.name} and ${b.name} were seen talking privately near the shelter.`;
+      pushSocialObservation({
+        type: 'ambient_pair',
+        actors: [a.name, b.name],
+        text
+      });
+      upsertRelationshipIntel(a.name, 'uncertain', `Spotted in a private talk with ${b.name}.`);
+      upsertRelationshipIntel(b.name, 'uncertain', `Spotted in a private talk with ${a.name}.`);
+    }, 14000);
+    return () => clearInterval(id);
+  }, [phase, castaways, currentRound]);
+
   function pickRandom(arr) {
     if (!arr || !arr.length) return '';
     return arr[Math.floor(Math.random() * arr.length)];
@@ -525,8 +560,68 @@ export default function App() {
     return out;
   }
 
+  function normalizeArchetype(text) {
+    const cleaned = String(text || '')
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return '';
+    return cleaned.split(' ').slice(0, 2).join(' ');
+  }
+
   function zoneById(zoneId) {
     return CAMP_ZONES.find((z) => z.id === zoneId) || CAMP_ZONES[0];
+  }
+
+  function pushSocialObservation(observation) {
+    const item = {
+      id: `social-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      round: currentRound,
+      ...observation
+    };
+    setSocialObservations((prev) => [...prev, item]);
+    setSocialAmbientNotices((prev) => [...prev.slice(-3), item]);
+  }
+
+  function buildPriorRoundsContext() {
+    if (currentRound <= 1 || !roundHistoryArchive.length) return '';
+    return `Prior round continuity:
+${JSON.stringify(roundHistoryArchive, null, 2)}
+Current social observations:
+${JSON.stringify(socialObservations.filter((o) => o.round <= currentRound), null, 2)}`;
+  }
+
+  function buildSocialObservationContext() {
+    const visible = socialObservations.filter((o) => o.round <= currentRound);
+    if (!visible.length) return 'Social observations this game: none yet.';
+    return `Social observations this game:
+${visible.map((o) => `- Round ${o.round}: ${o.text}`).join('\n')}`;
+  }
+
+  function upsertRelationshipIntel(name, status, summary) {
+    if (!name) return;
+    setRelationshipIntelByName((prev) => {
+      const existing = prev[name] || { status: 'unknown', summary: 'Relationship unknown.' };
+      const rank = { unknown: 0, uncertain: 1, ally: 2, threat: 3 };
+      const chosenStatus = rank[status] >= rank[existing.status] ? status : existing.status;
+      const chosenSummary = String(summary || '').trim() || existing.summary || 'Relationship unknown.';
+      return {
+        ...prev,
+        [name]: {
+          status: chosenStatus,
+          summary: chosenSummary
+        }
+      };
+    });
+  }
+
+  function chooseChallengeForRound(roundNumber) {
+    if (roundNumber <= 1) return pickChallengeType();
+    const used = new Set(Object.values(roundChallengeTypes).filter(Boolean));
+    const options = CHALLENGE_META ? Object.keys(CHALLENGE_META).filter((key) => !used.has(key)) : [];
+    const pool = options.length ? options : Object.keys(CHALLENGE_META);
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function pointHitsZone(px, py, zoneId, radius) {
@@ -569,7 +664,8 @@ Strategic rules:
 - Talking to an immune castaway is rational and valuable because their vote still counts.
 - Immune players can still be swing votes and power brokers.
 - If someone asks to target an immune person, correct and redirect immediately.
-- If player absences happened because of camp searching, that suspicion can be referenced naturally.`;
+- If player absences happened because of camp searching, that suspicion can be referenced naturally.
+${buildSocialObservationContext()}`;
   }
 
   function clearTribalAutoAdvanceTimer() {
@@ -1015,7 +1111,7 @@ Write a unique pep talk now.`;
 
       while (!normalized && attempts < 3) {
         attempts += 1;
-        const prompt = `Create exactly 5 AI castaways for a Survivor-style social deduction game.
+        const prompt = `Create exactly ${CASTAWAY_COUNT} AI castaways for a Survivor-style social deduction game.
 Player name: ${cleanedName}
 Player occupation: ${cleanedOccupation}
 
@@ -1034,7 +1130,8 @@ Return ONLY a JSON array with this exact shape:
 Rules:
 - Each castaway must feel distinct.
 - Do not use the player's name "${cleanedName}" for any castaway.
-- All 5 castaway names must be unique.
+- All ${CASTAWAY_COUNT} castaway names must be unique.
+- Personality archetypes must all be different from each other across the full cast. No overlapping archetypes.
 - Factor the player's occupation into hidden agendas and alliance behavior: some castaways may see it as a threat, some as an asset, some may underestimate the player.
 - secretAlliances should list castaway names from the same generated group.
 - hiddenAgenda should be strategic and specific.
@@ -1051,7 +1148,7 @@ Rules:
         });
 
         const parsed = parseClaudeJson(raw);
-        if (!Array.isArray(parsed) || parsed.length !== 5) {
+        if (!Array.isArray(parsed) || parsed.length !== CASTAWAY_COUNT) {
           continue;
         }
 
@@ -1067,9 +1164,11 @@ Rules:
 
         const lowerPlayer = cleanedName.toLowerCase();
         const lowerNames = candidate.map((c) => c.name.toLowerCase());
+        const archetypes = candidate.map((c) => normalizeArchetype(c.personality));
         const hasPlayerName = lowerNames.includes(lowerPlayer);
         const uniqueCount = new Set(lowerNames).size;
-        if (hasPlayerName || uniqueCount !== 5) {
+        const uniqueArchetypeCount = new Set(archetypes).size;
+        if (hasPlayerName || uniqueCount !== CASTAWAY_COUNT || uniqueArchetypeCount !== CASTAWAY_COUNT) {
           continue;
         }
 
@@ -1156,7 +1255,25 @@ Rules:
       setTribalCastawayExchangesSincePlayer(0);
       setTribalPlayerCheckInThreshold(Math.random() < 0.5 ? 2 : 3);
       setSelectedCastawayId(normalized[0].id);
-      setupImmunityChallenge(pickChallengeType(), normalized);
+      setCurrentRound(1);
+      setRoundRecap([]);
+      setRoundHistoryArchive([]);
+      setBetweenRoundBriefLoading(false);
+      setBetweenRoundSummary('');
+      setBetweenRoundLinks([]);
+      setFinalGameSummary('');
+      setSocialObservations([]);
+      setSocialAmbientNotices([]);
+      setLastObservedOneOnOneKey('');
+      setRelationshipIntelByName(
+        normalized.reduce((acc, c) => {
+          acc[c.name] = { status: 'unknown', summary: 'Relationship unknown.' };
+          return acc;
+        }, {})
+      );
+      const round1Challenge = chooseChallengeForRound(1);
+      setRoundChallengeTypes({ 1: round1Challenge });
+      setupImmunityChallenge(round1Challenge, normalized);
     } catch (err) {
       setError(err.message || 'Unable to generate castaways.');
     } finally {
@@ -1175,6 +1292,25 @@ Rules:
     const userText = conversationInput.trim();
     setConversationInput('');
     const userAskedIdol = /\bidol|clue|search|well|palm|fire pit|rocks|camp\b/i.test(userText);
+    const oneOnOneKey = `r${currentRound}:${castawayId}`;
+    if (oneOnOneKey !== lastObservedOneOnOneKey) {
+      setLastObservedOneOnOneKey(oneOnOneKey);
+      const observers = pickRandomMany(
+        castaways.filter((c) => c.id !== castawayId),
+        1 + Math.floor(Math.random() * 2)
+      );
+      if (observers.length) {
+        const observerNames = observers.map((o) => o.name);
+        const note = `${observerNames.join(' and ')} noticed you pulled ${selectedCastaway.name} aside for a private chat.`;
+        pushSocialObservation({
+          type: 'player_one_on_one',
+          actors: [playerName, selectedCastaway.name],
+          observers: observerNames,
+          text: note
+        });
+        upsertRelationshipIntel(selectedCastaway.name, 'uncertain', `You were seen meeting privately with ${selectedCastaway.name}.`);
+      }
+    }
 
     const userMsg = {
       id: `u-${Date.now()}`,
@@ -1220,6 +1356,7 @@ Your profile:
 - The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how your character perceives and interacts with them.
 - Immunity status tonight: ${playerHasImmunity ? `${playerName} has immunity.` : immuneCastawayName ? `${immuneCastawayName} has immunity.` : 'No immunity has been won yet.'}
 ${buildIdolContext()}
+${buildPriorRoundsContext()}
 ${searchStatus}
 ${thisIsClueHolder ? `You secretly have a clue to idol location: ${idolLocation}. You have NOT retrieved it. Drop only subtle, cryptic hints if idol topic is close; be evasive if asked directly.` : ''}
 ${castawayHasIdolName === selectedCastaway.name ? 'You secretly hold the real hidden immunity idol. Act more confident and less rattled, but do not confess ownership unless absolutely forced.' : ''}
@@ -1303,6 +1440,19 @@ Rules:
     setCampfireHistory(nextHistory);
     try {
       const invitedNames = castaways.filter((c) => campfireInvites.includes(c.id)).map((c) => c.name);
+      const excludedNames = castaways.filter((c) => !campfireInvites.includes(c.id)).map((c) => c.name);
+      if (invitedNames.length > 0 && excludedNames.length > 0) {
+        const limitedExcluded = excludedNames.slice(0, 3);
+        pushSocialObservation({
+          type: 'campfire_exclusion',
+          actors: invitedNames,
+          excluded: limitedExcluded,
+          text: `${limitedExcluded.join(', ')} noticed they were excluded while you gathered ${invitedNames.join(', ')} at the campfire.`
+        });
+        limitedExcluded.forEach((name) => {
+          upsertRelationshipIntel(name, 'uncertain', `Was excluded from your campfire with ${invitedNames.join(', ')}.`);
+        });
+      }
       const organicMode = invitedNames.length === 0;
       const recentlyInvitedNames = castaways.filter((c) => campfireRecentlyInvited.includes(c.id)).map((c) => c.name);
       const recentlyUninvitedNames = castaways.filter((c) => campfireRecentlyUninvited.includes(c.id)).map((c) => c.name);
@@ -1340,6 +1490,7 @@ Tone and behavior rules:
 - Let each castaway notice different things based on personality (strategic inconsistency reads, emotional reads, or interaction-pattern reads).
 - Immunity status tonight: ${playerHasImmunity ? `${playerName} has immunity.` : immuneCastawayName ? `${immuneCastawayName} has immunity.` : 'No immunity has been won yet.'}
 ${buildIdolContext()}
+${buildPriorRoundsContext()}
 - Immunity must drive strategy in this conversation:
   - Immunity only prevents votes against that person tonight.
   - The immune person still votes, can influence decisions, and can be courted as a key vote.
@@ -1482,6 +1633,14 @@ Rules:
     if (castawayClueFinderName && Math.random() < 0.35 && !active.includes(castawayClueFinderName)) {
       active.push(castawayClueFinderName);
     }
+    if (active.length) {
+      const obscured = active.length > 1 ? 'A couple of castaways' : 'A castaway';
+      pushSocialObservation({
+        type: 'castaway_idol_search_absence',
+        actors: active,
+        text: `${obscured} disappeared from camp for a while.`
+      });
+    }
     setCastawayCurrentlySearching(active);
   }
 
@@ -1504,8 +1663,18 @@ Rules:
     if (phase !== 'convo') return;
     if (playerHasIdol || campSearchOpen) return;
     const nextSearchCount = searchCount + 1;
+    const watchers = pickRandomMany(castaways, 1 + Math.floor(Math.random() * 2)).map((c) => c.name);
     setSearchCount(nextSearchCount);
     setPlayerSearchedCamp(true);
+    setPlayerSearchNoticedBy((prev) => Array.from(new Set([...prev, ...watchers])));
+    if (watchers.length) {
+      pushSocialObservation({
+        type: 'player_search_absence',
+        actors: [playerName],
+        observers: watchers,
+        text: `${watchers.join(' and ')} noticed you disappeared from camp for a while.`
+      });
+    }
     setCampSearchTurnsLeft(4);
     setCampSearchEnergy(100);
     setCampSearchSuspicion(0);
@@ -1709,6 +1878,7 @@ Immunity constraints:
 Output constraints:
 - Return strict JSON only, no markdown.
 ${buildIdolContext()}
+${buildPriorRoundsContext()}
 - Host lines already used this session must never be repeated or closely paraphrased.
 
 Format:
@@ -1871,6 +2041,7 @@ Conversation rules:
 - Keep each line concise: Host 1-2 sentences, castaways 1-3 sentences.
 - Return strict JSON only, no markdown.
 ${buildIdolContext()}
+${buildPriorRoundsContext()}
 - Host lines already used in this tribal session must never be repeated or closely paraphrased.
 
 Output format:
@@ -2140,6 +2311,7 @@ Decision rules:
         }))
       }));
 
+      const votingCastawayCount = castaways.length;
       const system = `You simulate strategic Survivor-style voting behavior.
 
 Core principle:
@@ -2177,7 +2349,10 @@ Immunity rule:
 - The immune person still votes and can be a decisive swing vote.
 - Never produce a vote for an immune person.
 
+${buildPriorRoundsContext()}
 Return strict JSON only. No markdown.`;
+      const totalPotentialVotesTonight = castaways.length + (playerHasImmunity ? 0 : 1);
+      const majorityVotesNeeded = Math.floor(totalPotentialVotesTonight / 2) + 1;
       const userPrompt = `Player name: ${playerName}
 Player occupation: ${playerOccupation}
 Player immunity status: ${playerHasImmunity ? 'Won immunity (cannot be voted out)' : 'No immunity (can be voted out)'}
@@ -2188,18 +2363,20 @@ Player idol played: ${idolPlayedByPlayer ? 'yes' : 'no'}
 Player idol fake: ${idolPlayedFakeByPlayer ? 'yes' : 'no'}
 Player idol protected target: ${playerIdolProtectedName || 'none'}
 Castaway idol holder: ${castawayHasIdolName || 'none'}
+Majority threshold tonight: ${majorityVotesNeeded}
 
 Castaway data:
 ${JSON.stringify(castawayData, null, 2)}
+${buildPriorRoundsContext()}
 
 Task:
-Simulate how the 5 castaways voted at tribal council based on hidden agendas, alliances, and player conversations.
+Simulate how the ${votingCastawayCount} castaways voted at tribal council based on hidden agendas, alliances, and player conversations.
 Return ONLY JSON in this exact format:
 [
   { "name": "", "votedFor": "", "flipped": false }
 ]
 Rules:
-- Exactly 5 vote objects.
+- Exactly ${votingCastawayCount} vote objects.
 - name must be each castaway exactly once.
 - votedFor must be one of the eligible vote target names.
 - votedFor cannot be themselves.
@@ -2227,7 +2404,7 @@ Rules:
       });
 
       const parsedVotes = parseClaudeJson(rawVotes);
-      if (!Array.isArray(parsedVotes) || parsedVotes.length !== 5) {
+      if (!Array.isArray(parsedVotes) || parsedVotes.length !== votingCastawayCount) {
         throw new Error('Vote simulation returned invalid data.');
       }
 
@@ -2242,11 +2419,11 @@ Rules:
         .filter((v) => validVoters.has(v.name) && validTargets.has(v.votedFor) && v.name !== v.votedFor)
         .filter((v) => !immuneTargetNames.has(v.votedFor));
 
-      if (normalizedVotes.length !== 5) {
+      if (normalizedVotes.length !== votingCastawayCount) {
         throw new Error('Claude vote output failed validation.');
       }
       const uniqueVoterCount = new Set(normalizedVotes.map((v) => v.name)).size;
-      if (uniqueVoterCount !== 5) {
+      if (uniqueVoterCount !== votingCastawayCount) {
         throw new Error('Claude vote output contained duplicate voters.');
       }
 
@@ -2384,6 +2561,7 @@ The reveal must feel like director's commentary on the player's exact game, not 
 - If the player made a fatal mistake, name it precisely.
 - The verdict must be personal and specific, tied to exact moments in this session.
 
+${buildPriorRoundsContext()}
 Return strict JSON only, no markdown.`;
         const prompt = `Generate a post-tribal truth reveal from this game state:
 ${JSON.stringify(payload, null, 2)}
@@ -2400,7 +2578,7 @@ Return ONLY JSON with this shape:
 }
 
 Rules:
-- thoughts must include all 5 castaway names exactly once.
+- thoughts must include all ${castaways.length} castaway names exactly once.
 - thought must be one sentence each.
 - alliancesExposed should list concise alliance truths.
 - flippedCallouts should include only castaways who flipped against what they told the player.
@@ -2487,6 +2665,218 @@ Rules:
 
     buildReveal();
   }, [eliminatedName]);
+
+  async function buildBetweenRoundBrief() {
+    setBetweenRoundBriefLoading(true);
+    try {
+      const payload = {
+        playerName,
+        playerOccupation,
+        eliminatedName,
+        castaways: castaways.map((c) => ({
+          name: c.name,
+          personality: c.personality,
+          hiddenAgenda: c.hiddenAgenda,
+          secretAlliances: c.secretAlliances
+        })),
+        votes,
+        conversations: castaways.map((c) => ({
+          name: c.name,
+          oneOnOne: (conversationHistories[c.id] || []).map((m) => ({ role: m.role, text: m.text }))
+        })),
+        campfireHistory: campfireHistory.map((m) => ({
+          role: m.role,
+          speaker: m.role === 'user' ? playerName : m.speaker || '',
+          text: m.text
+        })),
+        tribalHistory: tribalPublicHistory.map((m) => ({ role: m.role, speaker: m.speaker, text: m.text })),
+        revealData
+      };
+
+      const system = `You are creating a between-round social map for a Survivor-style strategy game.
+Return JSON only.
+Generate:
+- a 3-4 sentence host briefing about fault lines heading into Round 2
+- alliance links grounded in real game moments
+Link types:
+- confirmed (solid): known alliances/deals that clearly formed
+- suspected (dotted): credible but unconfirmed alliances
+- broken (red): relationships that publicly cracked
+Use specific labels like "voted together", "made a deal", "publicly clashed", "secret alliance suspected".`;
+
+      const prompt = `Use this state:
+${JSON.stringify(payload, null, 2)}
+
+Return ONLY:
+{
+  "summary": "",
+  "links": [
+    { "from": "You or castaway name", "to": "castaway name", "type": "confirmed|suspected|broken", "label": "" }
+  ]
+}
+
+Rules:
+- from/to names must be "You" or exact castaway names from this round.
+- no self links.
+- include 6-16 links.
+- labels are short (2-5 words).
+- valid JSON only.`;
+      const raw = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 2000,
+        temperature: 0.85
+      });
+      const parsed = parseClaudeJson(raw) || {};
+      const validNames = new Set(['You', ...castaways.map((c) => c.name)]);
+      const links = Array.isArray(parsed.links)
+        ? parsed.links
+            .map((l) => ({
+              from: String(l?.from || '').trim(),
+              to: String(l?.to || '').trim(),
+              type: ['confirmed', 'suspected', 'broken'].includes(String(l?.type || '').trim()) ? String(l.type).trim() : 'suspected',
+              label: String(l?.label || '').trim() || 'social tie'
+            }))
+            .filter((l) => l.from && l.to && l.from !== l.to && validNames.has(l.from) && validNames.has(l.to))
+        : [];
+      setBetweenRoundSummary(
+        String(parsed.summary || '').trim() ||
+          `${eliminatedName} is gone, but tonight's cracks are still open. Round 2 starts with old deals under stress and new targets emerging.`
+      );
+      setBetweenRoundLinks(links);
+
+      links.forEach((link) => {
+        const other = link.from === 'You' ? link.to : link.to === 'You' ? link.from : '';
+        if (!other) return;
+        if (link.type === 'confirmed') upsertRelationshipIntel(other, 'ally', `${link.label}.`);
+        else if (link.type === 'broken') upsertRelationshipIntel(other, 'threat', `${link.label}.`);
+        else upsertRelationshipIntel(other, 'uncertain', `${link.label}.`);
+      });
+    } catch (err) {
+      setBetweenRoundSummary(
+        `${eliminatedName} is out, and seven remain. The camp is split between fragile deals, hidden suspicion, and alliances that may crack at any second.`
+      );
+      setBetweenRoundLinks([]);
+      setError(err.message || 'Failed to build between-round briefing.');
+    } finally {
+      setBetweenRoundBriefLoading(false);
+    }
+  }
+
+  function beginRound2() {
+    if (currentRound !== 1) return;
+    const survivors = castaways.filter((c) => c.name !== eliminatedName);
+    const survivorIds = new Set(survivors.map((c) => c.id));
+    const nextHistories = Object.fromEntries(Object.entries(conversationHistories).filter(([id]) => survivorIds.has(id)));
+    setCastaways(survivors);
+    setConversationHistories(nextHistories);
+    setCampfireInvites((prev) => prev.filter((id) => survivorIds.has(id)));
+    setCampfireRecentlyInvited([]);
+    setCampfireRecentlyUninvited([]);
+    setSelectedCastawayId(survivors[0]?.id || null);
+    setCurrentRound(2);
+    setPlayerHasImmunity(false);
+    setImmuneCastawayName('');
+    const round2Challenge = chooseChallengeForRound(2);
+    setRoundChallengeTypes((prev) => ({ ...prev, 2: round2Challenge }));
+    setupImmunityChallenge(round2Challenge, survivors);
+    setPhaseTwoOnboardingDismissed(false);
+  }
+
+  async function buildFinalGameSummary(nextRoundRecap) {
+    try {
+      const payload = {
+        playerName,
+        playerOccupation,
+        rounds: nextRoundRecap,
+        roundArchive: [...roundHistoryArchive, {
+          round: currentRound,
+          eliminatedName,
+          revealData,
+          votes,
+          tribalHistory: tribalPublicHistory,
+          campfireHistory,
+          socialObservations: socialObservations.filter((o) => o.round === currentRound)
+        }]
+      };
+      const system = `You write a final two-round Survivor-style season summary.
+Return plain text only in 4-7 sentences.
+Include:
+- who was eliminated each round
+- alliances formed and broken
+- deals honored and betrayed
+- a precise final verdict on the player's overall performance across both rounds.`;
+      const prompt = `Use this state:
+${JSON.stringify(payload, null, 2)}
+
+Write the final summary now.`;
+      const text = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 1000,
+        temperature: 0.9
+      });
+      setFinalGameSummary(
+        String(text || '').trim() ||
+          'Across two rounds, you shaped the vote at key moments but paid for every loose thread. Some deals held, others snapped at tribal, and your social reads decided whether pressure turned into control.'
+      );
+    } catch (err) {
+      setFinalGameSummary(
+        'Two rounds are complete. You built leverage with some castaways, lost trust with others, and every deal left a visible mark on the vote. Your final result came down to how well you managed public pressure versus private promises.'
+      );
+      setError(err.message || 'Failed to build final game summary.');
+    }
+  }
+
+  function applyRoundVoteIntel(roundNumber, roundVotes) {
+    if (!Array.isArray(roundVotes)) return;
+    roundVotes.forEach((v) => {
+      if (v.votedFor === playerName) {
+        upsertRelationshipIntel(v.name, 'threat', `Voted against you in Round ${roundNumber}.`);
+      } else if (v.flipped) {
+        upsertRelationshipIntel(v.name, 'threat', `Betrayed a stated plan in Round ${roundNumber}.`);
+      } else {
+        upsertRelationshipIntel(v.name, 'uncertain', `Voted for ${v.votedFor} in Round ${roundNumber}.`);
+      }
+    });
+  }
+
+  async function handleRevealContinue() {
+    const recapEntry = {
+      round: currentRound,
+      eliminatedName,
+      note: revealData?.verdict || `Round ${currentRound} ended with ${eliminatedName} voted out.`
+    };
+    const nextRecap = [...roundRecap.filter((r) => r.round !== currentRound), recapEntry].sort((a, b) => a.round - b.round);
+    setRoundRecap(nextRecap);
+    applyRoundVoteIntel(currentRound, votes);
+
+    const archiveEntry = {
+      round: currentRound,
+      eliminatedName,
+      revealData,
+      votes,
+      campfireHistory: [...campfireHistory],
+      tribalHistory: [...tribalPublicHistory],
+      conversations: castaways.map((c) => ({
+        name: c.name,
+        history: conversationHistories[c.id] || []
+      })),
+      socialObservations: socialObservations.filter((o) => o.round === currentRound)
+    };
+    setRoundHistoryArchive((prev) => [...prev.filter((r) => r.round !== currentRound), archiveEntry].sort((a, b) => a.round - b.round));
+
+    if (currentRound < TOTAL_ROUNDS) {
+      await buildBetweenRoundBrief();
+      setPhase('between_rounds');
+      return;
+    }
+
+    await buildFinalGameSummary(nextRecap);
+    setPhase('game_end');
+  }
 
   function openTribalPhase() {
     setPhase('tribal');
@@ -2682,6 +3072,10 @@ Rules:
             closeCampSearch={() => finishCampSearch(false, 'You cut the search short and returned to camp.')}
             showPhaseTwoOnboarding={!phaseTwoOnboardingDismissed}
             dismissPhaseTwoOnboarding={() => setPhaseTwoOnboardingDismissed(true)}
+            socialAmbientNotices={socialAmbientNotices}
+            castawayCurrentlySearching={castawayCurrentlySearching}
+            relationshipIntelByName={relationshipIntelByName}
+            currentRound={currentRound}
           />
         )}
 
@@ -2722,7 +3116,29 @@ Rules:
         )}
 
         {phase === 'reveal' && (
-          <RevealPhase revealLoading={revealLoading} revealData={revealData} castaways={castaways} setPhase={setPhase} />
+          <RevealPhase
+            revealLoading={revealLoading}
+            revealData={revealData}
+            castaways={castaways}
+            onContinue={handleRevealContinue}
+            continueLabel={currentRound < TOTAL_ROUNDS ? 'View Round 2 Briefing' : 'View Final Season Summary'}
+          />
+        )}
+
+        {phase === 'between_rounds' && (
+          <BetweenRoundsPhase
+            eliminatedName={eliminatedName}
+            remainingCount={Math.max(0, castaways.length - 1)}
+            allianceBriefLoading={betweenRoundBriefLoading}
+            allianceSummary={betweenRoundSummary}
+            allianceLinks={betweenRoundLinks}
+            allianceNodeNames={['You', ...castaways.map((c) => c.name)]}
+            beginRound2={beginRound2}
+          />
+        )}
+
+        {phase === 'game_end' && (
+          <GameSummaryPhase roundRecap={roundRecap} finalSummary={finalGameSummary} continueToEmail={() => setPhase('final')} />
         )}
 
         {phase === 'final' && (

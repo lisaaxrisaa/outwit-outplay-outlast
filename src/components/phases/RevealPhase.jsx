@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function RevealPhase({ revealLoading, revealData, castaways, setPhase }) {
+export default function RevealPhase({ revealLoading, revealData, castaways, onContinue, continueLabel = 'Continue' }) {
   return (
     <section className="animate-fadeIn">
       <div className="mx-auto max-w-5xl rounded-3xl border border-amber-300/30 dossier p-6 sm:p-8">
@@ -88,10 +88,10 @@ export default function RevealPhase({ revealLoading, revealData, castaways, setP
             </div>
 
             <button
-              onClick={() => setPhase('final')}
+              onClick={onContinue}
               className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-3 text-sm font-bold text-zinc-950"
             >
-              Continue
+              {continueLabel}
             </button>
           </div>
         )}

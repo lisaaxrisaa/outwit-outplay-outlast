@@ -388,8 +388,9 @@ export default function ImmunityPuzzlePhase(props) {
     torchStatus,
     rotateTorchCell
   } = props;
-  const leftCastaways = castaways.slice(0, 2);
-  const rightCastaways = castaways.slice(2);
+  const splitIndex = Math.ceil(castaways.length / 2);
+  const leftCastaways = castaways.slice(0, splitIndex);
+  const rightCastaways = castaways.slice(splitIndex);
   const ropeBoardRef = useRef(null);
   const [draggingNodeId, setDraggingNodeId] = useState(null);
   const sequenceSymbolMap = useMemo(
@@ -472,8 +473,8 @@ export default function ImmunityPuzzlePhase(props) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
-          <div className="space-y-3 rounded-2xl border border-amber-300/25 bg-black/25 p-3">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[240px_minmax(0,1fr)_240px]">
+          <div className="max-h-[70vh] space-y-2 overflow-y-auto rounded-2xl border border-amber-300/25 bg-black/25 p-2">
             <div className="text-[10px] uppercase tracking-[0.2em] text-amber-200">Left Lanes</div>
             {leftCastaways.map(renderCastawayPanel)}
           </div>
@@ -813,7 +814,7 @@ export default function ImmunityPuzzlePhase(props) {
             )}
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-amber-300/25 bg-black/25 p-3">
+          <div className="max-h-[70vh] space-y-2 overflow-y-auto rounded-2xl border border-amber-300/25 bg-black/25 p-2">
             <div className="text-[10px] uppercase tracking-[0.2em] text-amber-200">Right Lanes</div>
             {rightCastaways.map(renderCastawayPanel)}
           </div>

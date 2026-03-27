@@ -47,7 +47,11 @@ export default function ConversationPhase(props) {
     idolRevealMoment,
     dismissIdolReveal,
     showPhaseTwoOnboarding,
-    dismissPhaseTwoOnboarding
+    dismissPhaseTwoOnboarding,
+    socialAmbientNotices,
+    castawayCurrentlySearching,
+    relationshipIntelByName,
+    currentRound
   } = props;
 
   function HelpTip({ text }) {
@@ -178,7 +182,7 @@ export default function ConversationPhase(props) {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-4xl tracking-wide text-emerald-200">Phase 2: Tribe Conversations</h2>
+        <h2 className="font-display text-4xl tracking-wide text-emerald-200">Round {currentRound}: Tribe Conversations</h2>
         <div className="flex items-center gap-1.5">
           <button
             onClick={searchCamp}
@@ -209,6 +213,16 @@ export default function ConversationPhase(props) {
         </div>
       )}
 
+      {socialAmbientNotices?.length > 0 && (
+        <div className="space-y-2">
+          {socialAmbientNotices.slice(-3).map((notice) => (
+            <div key={notice.id} className="rounded-xl border border-zinc-700/70 bg-zinc-950/55 px-3 py-2 text-xs text-zinc-300">
+              {notice.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <button
           onClick={() => setChatMode('oneOnOne')}
@@ -229,26 +243,39 @@ export default function ConversationPhase(props) {
         <HelpTip text="Gather multiple castaways around the fire at once. What people say in a group reveals more than what they say alone." />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-2xl border border-emerald-300/60 bg-emerald-900/20 p-4 text-left shadow-lg shadow-emerald-700/15">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xl font-semibold text-zinc-100">{playerName || 'You'}</h3>
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-100">You</span>
-                {playerHasImmunity && (
-                  <span className="rounded-full border border-yellow-300/60 bg-yellow-700/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-yellow-100">
-                    Immunity
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-zinc-300">{playerOccupation || 'Player'}</p>
+      <div className="rounded-2xl border border-emerald-300/60 bg-emerald-900/20 p-4 text-left shadow-lg shadow-emerald-700/15">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold text-zinc-100">{playerName || 'You'}</h3>
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-100">You</span>
+              {playerHasImmunity && (
+                <span className="rounded-full border border-yellow-300/60 bg-yellow-700/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-yellow-100">
+                  Immunity
+                </span>
+              )}
             </div>
+            <p className="mt-1 text-sm text-zinc-300">{playerOccupation || 'Player'}</p>
           </div>
-          <span className="mt-3 inline-block rounded-full bg-emerald-700/50 px-3 py-1 text-xs font-medium text-emerald-100">Human wildcard</span>
         </div>
+        <span className="mt-3 inline-block rounded-full bg-emerald-700/50 px-3 py-1 text-xs font-medium text-emerald-100">Human wildcard</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
         {castaways.map((c) => (
+          (() => {
+            const intel = relationshipIntelByName?.[c.name] || { status: 'unknown', summary: 'Relationship unknown.' };
+            const intelDotClass =
+              intel.status === 'ally'
+                ? 'bg-emerald-400'
+                : intel.status === 'threat'
+                ? 'bg-red-400'
+                : intel.status === 'uncertain'
+                ? 'bg-yellow-300'
+                : 'bg-zinc-500';
+            const searching = castawayCurrentlySearching?.includes(c.name);
+            return (
           <div
             key={c.id}
             onClick={() => setSelectedCastawayId(c.id)}
@@ -266,15 +293,22 @@ export default function ConversationPhase(props) {
                 : 'border-zinc-700/70 bg-black/40 hover:border-emerald-300/50 hover:bg-emerald-800/10'
             } ${chatMode === 'campfire' && campfireInvites.includes(c.id) ? 'ring-2 ring-emerald-300/70' : ''} ${
               immuneCastawayName === c.name ? 'ring-2 ring-yellow-300/80 border-yellow-300/70' : ''
-            }`}
+            } ${searching ? 'opacity-70' : ''}`}
+            title={intel.summary}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="text-xl font-semibold text-zinc-100">{c.name}</h3>
+                  {intel.status !== 'unknown' && <span className={`h-2.5 w-2.5 rounded-full ${intelDotClass}`} />}
                   {immuneCastawayName === c.name && (
                     <span className="rounded-full border border-yellow-300/60 bg-yellow-700/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-yellow-100">
                       Immunity
+                    </span>
+                  )}
+                  {searching && (
+                    <span className="rounded-full border border-zinc-600 bg-zinc-900/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-zinc-200">
+                      Away
                     </span>
                   )}
                   {chatMode === 'campfire' && campfireInvites.includes(c.id) && (
@@ -307,6 +341,8 @@ export default function ConversationPhase(props) {
               </div>
             )}
           </div>
+            );
+          })()
         ))}
       </div>
 

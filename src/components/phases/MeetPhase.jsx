@@ -5,7 +5,7 @@ export default function MeetPhase({ playerNameInput, setPlayerNameInput, playerO
     <section className="mx-auto max-w-2xl animate-fadeIn">
       <div className="rounded-2xl border border-emerald-300/20 bg-black/45 p-6 backdrop-blur">
         <h2 className="font-display text-4xl tracking-wide text-emerald-200">Phase 1: Meet Your Tribe</h2>
-        <p className="mt-2 text-sm text-zinc-300">Enter your name and occupation, then generate five strategic castaways with hidden agendas.</p>
+        <p className="mt-2 text-sm text-zinc-300">Enter your name and occupation, then generate eight strategic castaways with hidden agendas.</p>
 
         <form onSubmit={generateCastaways} className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <input
