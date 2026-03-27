@@ -2404,28 +2404,38 @@ Rules:
       });
 
       const parsedVotes = parseClaudeJson(rawVotes);
-      if (!Array.isArray(parsedVotes) || parsedVotes.length !== votingCastawayCount) {
-        throw new Error('Vote simulation returned invalid data.');
-      }
-
+      const parsedArray = Array.isArray(parsedVotes) ? parsedVotes : [];
       const validVoters = new Set(castaways.map((c) => c.name));
       const validTargets = new Set(voteTargetNames);
-      const normalizedVotes = parsedVotes
-        .map((v) => ({
-          name: String(v?.name || '').trim(),
-          votedFor: String(v?.votedFor || '').trim(),
-          flipped: Boolean(v?.flipped)
-        }))
-        .filter((v) => validVoters.has(v.name) && validTargets.has(v.votedFor) && v.name !== v.votedFor)
-        .filter((v) => !immuneTargetNames.has(v.votedFor));
+      const byVoter = {};
 
-      if (normalizedVotes.length !== votingCastawayCount) {
-        throw new Error('Claude vote output failed validation.');
+      for (const rawVote of parsedArray) {
+        const name = String(rawVote?.name || '').trim();
+        const votedFor = String(rawVote?.votedFor || '').trim();
+        const flipped = Boolean(rawVote?.flipped);
+        if (!name || byVoter[name]) continue;
+        if (!validVoters.has(name)) continue;
+        if (!validTargets.has(votedFor)) continue;
+        if (name === votedFor) continue;
+        if (immuneTargetNames.has(votedFor)) continue;
+        byVoter[name] = { name, votedFor, flipped };
       }
-      const uniqueVoterCount = new Set(normalizedVotes.map((v) => v.name)).size;
-      if (uniqueVoterCount !== votingCastawayCount) {
-        throw new Error('Claude vote output contained duplicate voters.');
-      }
+
+      const normalizedVotes = castaways.map((c) => {
+        if (byVoter[c.name]) return byVoter[c.name];
+        const fallbackTargets = voteTargetNames.filter((name) => name !== c.name && !immuneTargetNames.has(name));
+        let fallbackTarget = '';
+        if (fallbackTargets.includes(voteTarget) && voteTarget !== c.name) {
+          fallbackTarget = voteTarget;
+        } else {
+          fallbackTarget = fallbackTargets[0] || castaways.find((x) => x.name !== c.name)?.name || playerName;
+        }
+        return {
+          name: c.name,
+          votedFor: fallbackTarget,
+          flipped: false
+        };
+      });
 
       let finalVotes = [...normalizedVotes];
       let playerVoteCounts = true;
