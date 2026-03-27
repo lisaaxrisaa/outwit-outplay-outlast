@@ -243,6 +243,29 @@ export default function ConversationPhase(props) {
         <HelpTip text="Gather multiple castaways around the fire at once. What people say in a group reveals more than what they say alone." />
       </div>
 
+      <div className="rounded-xl border border-zinc-700/70 bg-zinc-950/55 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-200">
+          <span className="font-semibold uppercase tracking-[0.12em] text-zinc-300">Relationship Radar</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            Confirmed ally
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-yellow-300" />
+            Uncertain
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+            Known threat
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-zinc-500" />
+            Unknown
+          </span>
+          <HelpTip text="Dots update based only on what you have learned in conversations and tribal. Hover a card to see the latest relationship note." />
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-emerald-300/60 bg-emerald-900/20 p-4 text-left shadow-lg shadow-emerald-700/15">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">

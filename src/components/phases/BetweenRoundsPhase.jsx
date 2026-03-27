@@ -26,6 +26,11 @@ export default function BetweenRoundsPhase({
   const width = 780;
   const height = 380;
   const positions = buildNodeLayout(allianceNodeNames, width, height);
+  const sortedLinks = [...allianceLinks].sort((a, b) => {
+    const rank = { confirmed: 0, broken: 1, suspected: 2 };
+    return (rank[a.type] ?? 3) - (rank[b.type] ?? 3);
+  });
+  const visibleLinks = sortedLinks.slice(0, 14);
 
   return (
     <section className="animate-fadeIn space-y-5">
@@ -41,9 +46,10 @@ export default function BetweenRoundsPhase({
         {allianceBriefLoading ? (
           <div className="rounded-xl border border-zinc-700/70 bg-black/35 p-4 text-sm text-zinc-300">Reading the social map heading into Round 2...</div>
         ) : (
-          <div className="overflow-x-auto">
-            <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto h-[380px] w-full min-w-[780px] rounded-xl border border-zinc-700/70 bg-zinc-950/65">
-              {allianceLinks.map((link, idx) => {
+          <div className="space-y-3">
+            <div className="overflow-x-auto">
+              <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto h-[380px] w-full min-w-[780px] rounded-xl border border-zinc-700/70 bg-zinc-950/65">
+              {visibleLinks.map((link, idx) => {
                 const from = positions[link.from];
                 const to = positions[link.to];
                 if (!from || !to) return null;
@@ -54,14 +60,11 @@ export default function BetweenRoundsPhase({
                     ? 'rgba(110,231,183,0.9)'
                     : 'rgba(250,204,21,0.95)';
                 const dash = link.type === 'suspected' ? '8 6' : '';
-                const mx = (from.x + to.x) / 2;
-                const my = (from.y + to.y) / 2;
                 return (
                   <g key={`alliance-link-${idx}`}>
-                    <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth="2.3" strokeDasharray={dash} />
-                    <text x={mx} y={my - 6} textAnchor="middle" fontSize="10" fill="rgba(244,244,245,0.95)">
-                      {link.label}
-                    </text>
+                    <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth="2.3" strokeDasharray={dash}>
+                      <title>{`${link.from} ↔ ${link.to}: ${link.label}`}</title>
+                    </line>
                   </g>
                 );
               })}
@@ -86,6 +89,29 @@ export default function BetweenRoundsPhase({
                 );
               })}
             </svg>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-300">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-6 rounded bg-emerald-300" />Confirmed</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-6 rounded bg-yellow-300" />Suspected</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-6 rounded bg-red-400" />Broken</span>
+              <span className="text-zinc-400">Hover any line for details.</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {visibleLinks.map((link, idx) => (
+                <div
+                  key={`alliance-detail-${idx}`}
+                  className={`rounded-lg border px-3 py-2 text-xs text-zinc-100 ${
+                    link.type === 'confirmed'
+                      ? 'border-emerald-400/45 bg-emerald-900/15'
+                      : link.type === 'broken'
+                      ? 'border-red-400/45 bg-red-900/15'
+                      : 'border-yellow-400/45 bg-yellow-900/10'
+                  }`}
+                >
+                  <span className="font-semibold">{link.from}</span> ↔ <span className="font-semibold">{link.to}</span> · {link.label}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -1874,6 +1874,9 @@ Immunity constraints:
 - The immune person still votes, still influences outcomes, and can be courted as a key vote.
 - Nobody pushes voting for the immune person.
 - If an immune name comes up, someone should correct and redirect.
+- If the player is immune, castaways should not repeatedly attack or antagonize the player.
+- An immune player should be treated as a power vote to court for tonight and maintain trust with for tomorrow.
+- At most one brief acknowledgement of the player's immunity, then move to vulnerable targets and real at-risk drama between castaways.
 
 Output constraints:
 - Return strict JSON only, no markdown.
@@ -2028,6 +2031,9 @@ Immunity is non-negotiable:
 - Nobody suggests voting out the immune person.
 - If an immune name is raised, castaways/host correct and redirect.
 - Conversation should focus on viable targets given who is safe.
+- If the player is immune, castaways must not repeatedly target or antagonize the player.
+- If addressing an immune player, castaways should court their vote, align socially, or use their read against other vulnerable castaways.
+- After one brief immunity acknowledgement, shift pressure to vulnerable castaways who can actually go home tonight.
 
 Conversation rules:
 - This is a flowing group chat around the fire.
@@ -2511,6 +2517,7 @@ Rules:
 
     async function buildReveal() {
       setRevealLoading(true);
+      setPhase('reveal');
       try {
         const payload = {
           playerName,
