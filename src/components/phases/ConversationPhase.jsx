@@ -247,7 +247,7 @@ export default function ConversationPhase(props) {
         <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-200">
           <span className="font-semibold uppercase tracking-[0.12em] text-zinc-300">Relationship Radar</span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            <span className="h-2.5 w-2.5 rounded-full bg-sky-400" />
             Confirmed ally
           </span>
           <span className="inline-flex items-center gap-1.5">
@@ -255,7 +255,7 @@ export default function ConversationPhase(props) {
             Uncertain
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+            <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
             Known threat
           </span>
           <span className="inline-flex items-center gap-1.5">
@@ -291,9 +291,9 @@ export default function ConversationPhase(props) {
             const intel = relationshipIntelByName?.[c.name] || { status: 'unknown', summary: 'Relationship unknown.' };
             const intelDotClass =
               intel.status === 'ally'
-                ? 'bg-emerald-400'
+                ? 'bg-sky-400'
                 : intel.status === 'threat'
-                ? 'bg-red-400'
+                ? 'bg-orange-500'
                 : intel.status === 'uncertain'
                 ? 'bg-yellow-300'
                 : 'bg-zinc-500';
