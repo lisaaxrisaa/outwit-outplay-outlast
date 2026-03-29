@@ -1122,21 +1122,34 @@ Return ONLY a JSON array with this exact shape:
     "age": 0,
     "occupation": "",
     "personality": "",
+    "survivorArchetype": "",
+    "personalReason": "",
+    "vulnerability": "",
+    "presentation": "",
+    "reality": "",
     "hiddenAgenda": "",
     "secretAlliances": []
   }
 ]
 
 Rules:
-- Each castaway must feel distinct.
+- Each castaway must feel like a fully realized person, not a trope label.
 - Do not use the player's name "${cleanedName}" for any castaway.
 - All ${CASTAWAY_COUNT} castaway names must be unique.
-- Personality archetypes must all be different from each other across the full cast. No overlapping archetypes.
-- Factor the player's occupation into hidden agendas and alliance behavior: some castaways may see it as a threat, some as an asset, some may underestimate the player.
-- secretAlliances should list castaway names from the same generated group.
+- All survivorArchetype values must be distinct across the full cast of ${CASTAWAY_COUNT}.
+- personality is the surface vibe this person presents publicly (2-5 words).
+- personalReason must be specific and emotionally grounded; never generic.
+- vulnerability must be human and specific, not "fear of being voted out."
+- presentation and reality must form a meaningful contradiction.
 - hiddenAgenda should be strategic and specific.
-- Keep personalities short (2-5 words).
-- No extra keys.
+- secretAlliances should list castaway names from the same generated group.
+- Cast balance across the 8 must include:
+  - at least one immediately rootable warm person
+  - at least one immediately distrusted person with hidden complexity
+  - at least one overlooked but highly dangerous person
+  - at least one messy but sympathetic vulnerable person
+  - at least one castaway whose presentation-vs-reality reveal radically changes interpretation
+- Tone: grounded modern Survivor mixed with a few larger personalities, never cartoonish.
 - Output valid JSON only.`;
 
         const raw = await callClaude({
@@ -1158,17 +1171,25 @@ Rules:
           age: Number.isFinite(Number(c?.age)) ? Number(c.age) : 30,
           occupation: String(c?.occupation || 'Unknown').trim(),
           personality: String(c?.personality || 'Unreadable').trim(),
+          survivorArchetype: String(c?.survivorArchetype || '').trim(),
+          personalReason: String(c?.personalReason || '').trim(),
+          vulnerability: String(c?.vulnerability || '').trim(),
+          presentation: String(c?.presentation || '').trim(),
+          reality: String(c?.reality || '').trim(),
           hiddenAgenda: String(c?.hiddenAgenda || 'Stay under the radar.').trim(),
           secretAlliances: Array.isArray(c?.secretAlliances) ? c.secretAlliances.map((a) => String(a).trim()).filter(Boolean) : []
         }));
 
         const lowerPlayer = cleanedName.toLowerCase();
         const lowerNames = candidate.map((c) => c.name.toLowerCase());
-        const archetypes = candidate.map((c) => normalizeArchetype(c.personality));
+        const archetypes = candidate.map((c) => normalizeArchetype(c.survivorArchetype || c.personality));
         const hasPlayerName = lowerNames.includes(lowerPlayer);
         const uniqueCount = new Set(lowerNames).size;
         const uniqueArchetypeCount = new Set(archetypes).size;
-        if (hasPlayerName || uniqueCount !== CASTAWAY_COUNT || uniqueArchetypeCount !== CASTAWAY_COUNT) {
+        const completeLayers = candidate.every(
+          (c) => c.survivorArchetype && c.personalReason && c.vulnerability && c.presentation && c.reality
+        );
+        if (hasPlayerName || uniqueCount !== CASTAWAY_COUNT || uniqueArchetypeCount !== CASTAWAY_COUNT || !completeLayers) {
           continue;
         }
 
@@ -1348,7 +1369,13 @@ Rules:
 Your profile:
 - Age: ${selectedCastaway.age}
 - Occupation: ${selectedCastaway.occupation}
-- Personality: ${selectedCastaway.personality}
+- Surface personality (what you present): ${selectedCastaway.personality}
+- Survivor archetype: ${selectedCastaway.survivorArchetype || 'unknown'}
+- Private personal reason for being here (do not volunteer unless earned): ${selectedCastaway.personalReason || 'unspecified'}
+- Private vulnerability/fear trigger: ${selectedCastaway.vulnerability || 'unspecified'}
+- Presentation vs reality contradiction:
+  - Presentation: ${selectedCastaway.presentation || selectedCastaway.personality}
+  - Reality: ${selectedCastaway.reality || selectedCastaway.hiddenAgenda}
 - Hidden agenda (secret, never admit this): ${selectedCastaway.hiddenAgenda}
 - Secret alliances (you can hint, deny, or leverage these): ${selectedCastaway.secretAlliances.join(', ') || 'none'}
 - Other tribe members: ${otherNames.join(', ')}
@@ -1368,6 +1395,11 @@ Rules:
 - Use tribe member names naturally when useful.
 - Be subtly strategic; hint without openly exposing plans.
 - Lie convincingly when it serves your agenda.
+- Depth reveal rule:
+  - If the player asks surface strategy questions, stay surface.
+  - Only reveal personalReason/vulnerability in small cracks if the player asks emotionally specific questions or corners you with specific inconsistencies.
+  - Never dump backstory unprompted.
+  - Reveal contradiction through behavior and inconsistency, not direct exposition.
 - Ground your observations in specific events from this actual game history, not generic Survivor talk.
 - Avoid repeating phrases, angles, or callouts already used in this conversation; move the strategy forward.
 - Let your personality shape what you notice (for example: strategists notice inconsistencies, social players read emotion, quiet observers notice interaction patterns).
@@ -1466,6 +1498,11 @@ Rules:
       const castawayContext = castaways.map((c) => ({
         name: c.name,
         personality: c.personality,
+        survivorArchetype: c.survivorArchetype || '',
+        personalReason: c.personalReason || '',
+        vulnerability: c.vulnerability || '',
+        presentation: c.presentation || '',
+        reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
         hasClue: c.id === idolClueHolderId,
@@ -1484,6 +1521,11 @@ Tone and behavior rules:
 - Speak casually and naturally.
 - Keep each castaway response to 2-4 sentences.
 - Never directly admit hidden agendas.
+- Characters are layered people:
+  - keep backstory private unless the player creates emotional space or pressure
+  - surface answers for surface questions
+  - vulnerability appears in brief cracks under pressure, accusation, or betrayal moments
+  - contradiction (presentation vs reality) should appear through inconsistency, not direct confession
 - The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how castaways perceive and interact with them.
 - Every observation must be grounded in specific moments from this game history (campfire and 1-on-1), not generic suspicion lines.
 - Do not repeat the same phrase, accusation pattern, or behavioral read once it has already been used; advance the conversation.
@@ -1814,6 +1856,11 @@ Rules:
       const castawayContext = castaways.map((c) => ({
         name: c.name,
         personality: c.personality,
+        survivorArchetype: c.survivorArchetype || '',
+        personalReason: c.personalReason || '',
+        vulnerability: c.vulnerability || '',
+        presentation: c.presentation || '',
+        reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
         hasClue: c.id === idolClueHolderId,
@@ -1853,6 +1900,10 @@ Core rules:
 - Ground every line in specific moments from this game history (quotes, contradictions, absences, alliance behavior, hesitations).
 - If there is no specific grounded reference for a castaway line, keep that castaway quiet.
 - Castaways should react through personality differences and not sound interchangeable.
+- Castaways are layered humans, not one-note archetypes:
+  - do not force backstory dumps
+  - let vulnerability slip in short pressured moments only when context earns it
+  - reveal presentation-vs-reality gaps through specific inconsistency, not exposition
 
 Anti-repetition requirements:
 - Avoid repeating rhetorical moves within this tribal session and avoid stale recurring tribal patterns.
@@ -1966,6 +2017,11 @@ Write the tribal opening beat and immediate reactions.`;
         age: c.age,
         occupation: c.occupation,
         personality: c.personality,
+        survivorArchetype: c.survivorArchetype || '',
+        personalReason: c.personalReason || '',
+        vulnerability: c.vulnerability || '',
+        presentation: c.presentation || '',
+        reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
         hasClue: c.id === idolClueHolderId,
@@ -2007,6 +2063,10 @@ Core behavior:
 - Every line must be grounded in specific moments from this game (actual statements, contradictions, absences, alliance behavior, hesitations).
 - If a castaway cannot produce a specific grounded reference, that castaway should stay quiet.
 - Castaway perspective should reflect personality differences: strategic players track inconsistency, social players track emotional shifts, quiet observers track interaction patterns.
+- Layered-character behavior:
+  - Keep personal backstory private unless the moment earns it.
+  - Surface answers for surface questions; deeper cracks only under pressure or emotional specificity.
+  - Let presentation-vs-reality contradiction emerge through action and inconsistency.
 
 Anti-repetition constraints:
 - Never recycle the same rhetorical move repeatedly within this session.
@@ -2297,6 +2357,11 @@ Decision rules:
       const castawayData = castaways.map((c) => ({
         name: c.name,
         personality: c.personality,
+        survivorArchetype: c.survivorArchetype || '',
+        personalReason: c.personalReason || '',
+        vulnerability: c.vulnerability || '',
+        presentation: c.presentation || '',
+        reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
         hasIdol: castawayHasIdolName === c.name,
