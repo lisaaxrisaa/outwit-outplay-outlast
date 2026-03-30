@@ -24,6 +24,10 @@ export default function ConversationPhase(props) {
     canSendConversation,
     badgeColor,
     openTribalPhase,
+    isArrival,
+    startImmunityFromArrival,
+    campArrivalLoading,
+    campArrivalIntroMessages,
     playerHasImmunity,
     immuneCastawayName,
     searchCamp,
@@ -93,7 +97,24 @@ export default function ConversationPhase(props) {
   }
 
   return (
-    <section className="space-y-6 animate-fadeIn">
+    <section className={`space-y-6 animate-fadeIn ${isArrival ? 'arrival-glow' : ''}`}>
+      {isArrival && (
+        <div className="rounded-2xl border border-amber-300/40 bg-gradient-to-r from-amber-900/20 via-orange-900/15 to-emerald-900/10 p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Camp Arrival</div>
+          {campArrivalLoading ? (
+            <div className="mt-2 text-sm text-zinc-300">The tribe hits the beach...</div>
+          ) : (
+            <div className="mt-2 space-y-2 text-sm text-zinc-100">
+              {(campArrivalIntroMessages || []).map((m) => (
+                <div key={m.id} className="rounded-lg border border-zinc-700/70 bg-black/35 px-3 py-2">
+                  <span className="mr-2 text-xs font-semibold uppercase tracking-[0.08em] text-amber-200">{m.speaker}</span>
+                  <span>{m.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {campSearchOpen && (
         <div className="fixed inset-0 z-40 bg-black/85 backdrop-blur-sm">
           <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 py-5 sm:px-6">
@@ -182,25 +203,31 @@ export default function ConversationPhase(props) {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-4xl tracking-wide text-emerald-200">Round {currentRound}: Tribe Conversations</h2>
+        <h2 className="font-display text-4xl tracking-wide text-emerald-200">
+          {isArrival ? 'Camp Arrival' : `Round ${currentRound}: Tribe Conversations`}
+        </h2>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={searchCamp}
-            disabled={!canSearchCamp}
-            className="rounded-full border border-zinc-700 bg-black/35 px-3 py-1.5 text-xs uppercase tracking-widest text-zinc-300 transition hover:border-amber-300/70 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Search Camp
-          </button>
-          <span className="rounded-full border border-zinc-700 bg-black/45 px-2 py-1 text-[11px] uppercase tracking-wide text-zinc-400">
-            Searches: {searchCount}/{maxCampSearches}
-          </span>
-          <span className="rounded-full border border-rose-500/35 bg-rose-900/20 px-2 py-1 text-[11px] uppercase tracking-wide text-rose-200">
-            Suspicion: {searchSuspicionScore}/100
-          </span>
-          <HelpTip text="Each search trip can expose you. Higher suspicion means more castaways notice your absences and may distrust you." />
+          {!isArrival && (
+            <>
+              <button
+                onClick={searchCamp}
+                disabled={!canSearchCamp}
+                className="rounded-full border border-zinc-700 bg-black/35 px-3 py-1.5 text-xs uppercase tracking-widest text-zinc-300 transition hover:border-amber-300/70 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Search Camp
+              </button>
+              <span className="rounded-full border border-zinc-700 bg-black/45 px-2 py-1 text-[11px] uppercase tracking-wide text-zinc-400">
+                Searches: {searchCount}/{maxCampSearches}
+              </span>
+              <span className="rounded-full border border-rose-500/35 bg-rose-900/20 px-2 py-1 text-[11px] uppercase tracking-wide text-rose-200">
+                Suspicion: {searchSuspicionScore}/100
+              </span>
+              <HelpTip text="Each search trip can expose you. Higher suspicion means more castaways notice your absences and may distrust you." />
+            </>
+          )}
         </div>
       </div>
-      {idolRevealMoment && (
+      {idolRevealMoment && !isArrival && (
         <div className="rounded-2xl border border-yellow-300/35 dossier p-4">
           <div className="text-xs uppercase tracking-widest text-yellow-200">Secret Dossier</div>
           <div className="mt-2 text-sm text-zinc-100">{idolRevealMoment}</div>
@@ -435,22 +462,29 @@ export default function ConversationPhase(props) {
 
         <div className="rounded-2xl border border-zinc-700/60 bg-black/45 p-4">
           <h3 className="text-lg font-semibold text-emerald-200">Briefing</h3>
-          {playerHasImmunity && (
+          {!isArrival && playerHasImmunity && (
             <div className="mt-2 rounded-xl border border-yellow-300/45 bg-yellow-700/15 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-yellow-100">
               You won immunity. You cannot be voted out tonight.
             </div>
           )}
-          {!playerHasImmunity && immuneCastawayName && (
+          {!isArrival && !playerHasImmunity && immuneCastawayName && (
             <div className="mt-2 rounded-xl border border-yellow-300/45 bg-yellow-700/15 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-yellow-100">
               {immuneCastawayName} won immunity and is safe tonight.
             </div>
           )}
-          <p className="mt-2 text-sm text-zinc-300">Speak to whoever you want, for as long as you need. Everyone's hiding something. When you think you've figured it out - head to Tribal Council.</p>
-          <button onClick={openTribalPhase} className="mt-5 w-full rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-4 py-3 text-sm font-bold text-zinc-100 animate-pulseGlow">
-            Head to Tribal Council 🔥
+          <p className="mt-2 text-sm text-zinc-300">
+            {isArrival
+              ? "You're all meeting for the first time. Keep talking, read first impressions, and move when you're ready."
+              : "Speak to whoever you want, for as long as you need. Everyone's hiding something. When you think you've figured it out - head to Tribal Council."}
+          </p>
+          <button
+            onClick={isArrival ? startImmunityFromArrival : openTribalPhase}
+            className={`mt-5 w-full rounded-xl px-4 py-3 text-sm font-bold text-zinc-100 ${isArrival ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-zinc-950' : 'bg-gradient-to-r from-red-500 to-orange-500 animate-pulseGlow'}`}
+          >
+            {isArrival ? 'Head to Immunity Challenge' : 'Head to Tribal Council 🔥'}
           </button>
           <div className="mt-2 flex justify-end">
-            <HelpTip text="Once you leave for tribal, there's no coming back. Make sure you know your vote." />
+            <HelpTip text={isArrival ? 'You can move to the immunity challenge whenever you are ready.' : "Once you leave for tribal, there's no coming back. Make sure you know your vote."} />
           </div>
         </div>
       </div>

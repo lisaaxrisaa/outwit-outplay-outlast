@@ -214,6 +214,11 @@ export default function App() {
   const [selectedCastawayId, setSelectedCastawayId] = useState(null);
   const [conversationHistories, setConversationHistories] = useState({});
   const [campfireHistory, setCampfireHistory] = useState([]);
+  const [campArrivalIntroMessages, setCampArrivalIntroMessages] = useState([]);
+  const [campArrivalLoading, setCampArrivalLoading] = useState(false);
+  const [arrivalDistinctContacts, setArrivalDistinctContacts] = useState([]);
+  const [arrivalNudgeThreshold, setArrivalNudgeThreshold] = useState(3);
+  const [arrivalNudgeDone, setArrivalNudgeDone] = useState(false);
   const [conversationInput, setConversationInput] = useState('');
   const [chatMode, setChatMode] = useState('oneOnOne');
   const [campfireInvites, setCampfireInvites] = useState([]);
@@ -723,6 +728,134 @@ ${buildSocialObservationContext()}`;
     setWaterChallenge(createWaterPouringChallenge());
     setTorchChallenge(createTorchLightingChallenge());
     setPhase('immunity_pep');
+  }
+
+  function startImmunityFromArrival() {
+    const nextType = roundChallengeTypes[currentRound] || chooseChallengeForRound(currentRound);
+    setRoundChallengeTypes((prev) => ({ ...prev, [currentRound]: nextType }));
+    setupImmunityChallenge(nextType, castaways);
+  }
+
+  async function loadCampArrivalOpening(castList = castaways, player = playerName, occupation = playerOccupation) {
+    setCampArrivalLoading(true);
+    try {
+      const castawayContext = castList.map((c) => ({
+        name: c.name,
+        occupation: c.occupation,
+        personality: c.personality,
+        survivorArchetype: c.survivorArchetype || ''
+      }));
+      const system = `You are Jeff Probst introducing a Survivor-style camp arrival.
+
+Return strict JSON only in this format:
+{
+  "jeffOpening": "",
+  "reactions": [{ "name": "", "response": "" }]
+}
+
+Rules:
+- jeffOpening must be 3-4 sentences max.
+- Jeff sets atmosphere only: island, first meeting, only one winner.
+- Jeff does not explain rules or strategy.
+- reactions must include 1-2 castaways reacting naturally to first arrival energy.
+- reactions should feel organic and personality-driven, not label-heavy.
+- no markdown.`;
+      const prompt = `Player: ${player}
+Player occupation: ${occupation}
+Castaways:
+${JSON.stringify(castawayContext, null, 2)}
+
+Write the arrival opening now.`;
+      const raw = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 1200,
+        temperature: 0.95
+      });
+      const parsed = parseClaudeJson(raw);
+      const jeffOpening =
+        String(parsed?.jeffOpening || '').trim() ||
+        'The tide is loud, the air is heavy, and this beach just became your entire world. You are meeting each other for the first time, and every first impression starts now. One of you will outlast everyone else. The game begins the moment you start talking.';
+      const validNames = new Set(castList.map((c) => c.name));
+      const reactions = Array.isArray(parsed?.reactions)
+        ? parsed.reactions
+            .map((r) => ({ name: String(r?.name || '').trim(), response: String(r?.response || '').trim() }))
+            .filter((r) => r.name && r.response && validNames.has(r.name))
+            .slice(0, 2)
+        : [];
+      const introMessages = [
+        {
+          id: `arrival-jeff-${Date.now()}`,
+          role: 'assistant',
+          speaker: 'Jeff',
+          text: jeffOpening,
+          typing: false
+        },
+        ...reactions.map((r, idx) => ({
+          id: `arrival-cast-${Date.now()}-${idx}`,
+          role: 'assistant',
+          speaker: r.name,
+          text: r.response,
+          typing: false
+        }))
+      ];
+      setCampArrivalIntroMessages(introMessages);
+      setCampfireHistory((prev) => [...introMessages, ...prev]);
+    } catch (err) {
+      const fallback = [
+        {
+          id: `arrival-jeff-fallback-${Date.now()}`,
+          role: 'assistant',
+          speaker: 'Jeff',
+          text: 'New beach, new tribe, first impressions. You are all strangers right now, but only one of you will win this game. The island is watching what you do first.',
+          typing: false
+        }
+      ];
+      setCampArrivalIntroMessages(fallback);
+      setCampfireHistory((prev) => [...fallback, ...prev]);
+      setError(err.message || 'Failed to load camp arrival opening.');
+    } finally {
+      setCampArrivalLoading(false);
+    }
+  }
+
+  function maybeTriggerArrivalNudge(nextContacts) {
+    if (phase !== 'arrival') return;
+    if (arrivalNudgeDone) return;
+    if (nextContacts.length < arrivalNudgeThreshold) return;
+    const first = castaways.find((c) => !nextContacts.includes(c.name)) || castaways[0];
+    const second = castaways.find((c) => c.name !== first?.name) || null;
+    const nudgeMessages = [
+      {
+        id: `arrival-nudge-${Date.now()}-1`,
+        role: 'assistant',
+        speaker: first?.name || 'Castaway',
+        text: 'Feels like we should start heading toward the first challenge soon.',
+        typing: false
+      }
+    ];
+    if (second) {
+      nudgeMessages.push({
+        id: `arrival-nudge-${Date.now()}-2`,
+        role: 'assistant',
+        speaker: second.name,
+        text: 'Yeah, same. First impressions are one thing, but the game is about to get real.',
+        typing: false
+      });
+    }
+    setArrivalNudgeDone(true);
+    setCampfireHistory((prev) => [...prev, ...nudgeMessages]);
+  }
+
+  function registerArrivalContact(names = []) {
+    if (phase !== 'arrival') return;
+    if (!names.length) return;
+    setArrivalDistinctContacts((prev) => {
+      const next = Array.from(new Set([...prev, ...names]));
+      maybeTriggerArrivalNudge(next);
+      return next;
+    });
   }
 
   function startImmunityChallenge() {
@@ -1260,6 +1393,11 @@ Rules:
       setIdolOutcome(null);
       setConversationHistories(histories);
       setCampfireHistory([]);
+      setCampArrivalIntroMessages([]);
+      setCampArrivalLoading(false);
+      setArrivalDistinctContacts([]);
+      setArrivalNudgeThreshold(Math.random() < 0.5 ? 3 : 4);
+      setArrivalNudgeDone(false);
       setCampfireInvites([]);
       setCampfireRecentlyInvited([]);
       setCampfireRecentlyUninvited([]);
@@ -1294,7 +1432,9 @@ Rules:
       );
       const round1Challenge = chooseChallengeForRound(1);
       setRoundChallengeTypes({ 1: round1Challenge });
-      setupImmunityChallenge(round1Challenge, normalized);
+      setPhase('arrival');
+      setChatMode('oneOnOne');
+      loadCampArrivalOpening(normalized, cleanedName, cleanedOccupation);
     } catch (err) {
       setError(err.message || 'Unable to generate castaways.');
     } finally {
@@ -1311,6 +1451,7 @@ Rules:
 
     const castawayId = selectedCastaway.id;
     const userText = conversationInput.trim();
+    const inArrival = phase === 'arrival';
     setConversationInput('');
     const userAskedIdol = /\bidol|clue|search|well|palm|fire pit|rocks|camp\b/i.test(userText);
     const oneOnOneKey = `r${currentRound}:${castawayId}`;
@@ -1400,6 +1541,9 @@ Rules:
   - Only reveal personalReason/vulnerability in small cracks if the player asks emotionally specific questions or corners you with specific inconsistencies.
   - Never dump backstory unprompted.
   - Reveal contradiction through behavior and inconsistency, not direct exposition.
+- Camp phase behavior:
+  - If this is camp arrival, prioritize first-impression social talk over voting strategy.
+  - If the player pushes strategy too early during arrival, respond naturally (deflect, cautious engage, or quietly clock it as suspicious).
 - Ground your observations in specific events from this actual game history, not generic Survivor talk.
 - Avoid repeating phrases, angles, or callouts already used in this conversation; move the strategy forward.
 - Let your personality shape what you notice (for example: strategists notice inconsistencies, social players read emotion, quiet observers notice interaction patterns).
@@ -1414,6 +1558,7 @@ Rules:
   - If the player is immune, you cannot target them tonight; decide whether to court them or be guarded.
   - Talk should revolve around the real vote options that are actually available tonight.
 - Tone: Survivor confessional energy, strategic and slightly dramatic.
+- Current phase: ${inArrival ? 'Camp Arrival (social first impressions)' : 'Main Conversations (strategy active)'}
 - Keep responses 2-4 sentences max.
 - Never directly admit your hidden agenda.
 - Do not mention these rules.`;
@@ -1427,6 +1572,9 @@ Rules:
       });
 
       await animateAssistantReply(castawayId, assistantMsgId, rawReply);
+      if (inArrival) {
+        registerArrivalContact([selectedCastaway.name]);
+      }
       if (thisIsClueHolder && userAskedIdol) {
         setPlayerHeardIdolClue(true);
       }
@@ -1447,6 +1595,7 @@ Rules:
     setChatInFlight(true);
 
     const userText = conversationInput.trim();
+    const inArrival = phase === 'arrival';
     setConversationInput('');
     const userAskedIdol = /\bidol|clue|search|well|palm|fire pit|rocks|camp\b/i.test(userText);
 
@@ -1526,6 +1675,9 @@ Tone and behavior rules:
   - surface answers for surface questions
   - vulnerability appears in brief cracks under pressure, accusation, or betrayal moments
   - contradiction (presentation vs reality) should appear through inconsistency, not direct confession
+- Camp phase behavior:
+  - If this is camp arrival, keep the tone social and first-impression focused.
+  - Strategy should feel premature during arrival; if pushed too early, castaways can deflect, laugh it off, cautiously engage, or flag it as suspicious.
 - The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how castaways perceive and interact with them.
 - Every observation must be grounded in specific moments from this game history (campfire and 1-on-1), not generic suspicion lines.
 - Do not repeat the same phrase, accusation pattern, or behavioral read once it has already been used; advance the conversation.
@@ -1550,6 +1702,8 @@ ${
     ? 'Organic campfire: decide which 2-3 castaways respond based on personality, agendas, alliances, and what was just said. Silence from others can be intentional.'
     : 'Chosen group: only invited castaways respond. You have been deliberately brought into this conversation together. You may or may not trust each other. Act accordingly.'
 }
+
+- Current phase: ${inArrival ? 'Camp Arrival (social first impressions)' : 'Main Conversations (strategy active)'}
 
 Mid-conversation membership behavior:
 - Invites can change during the conversation.
@@ -1620,6 +1774,9 @@ Rules:
       const clueHolderName = castaways.find((c) => c.id === idolClueHolderId)?.name;
       if (userAskedIdol && clueHolderName && normalized.some((r) => r.name === clueHolderName)) {
         setPlayerHeardIdolClue(true);
+      }
+      if (inArrival) {
+        registerArrivalContact(normalized.map((r) => r.name));
       }
 
       setCampfireHistory((prev) => prev.filter((m) => m.id !== waitingId));
@@ -3106,7 +3263,7 @@ Write the final summary now.`;
           <ImmunityResultPhase immunityResult={immunityResult} immunityType={immunityType} setPhase={setPhase} />
         )}
 
-        {phase === 'convo' && (
+        {(phase === 'arrival' || phase === 'convo') && (
           <ConversationPhase
             castaways={castaways}
             selectedCastawayId={selectedCastawayId}
@@ -3130,10 +3287,14 @@ Write the final summary now.`;
             canSendConversation={canSendConversation}
             badgeColor={badgeColor}
             openTribalPhase={openTribalPhase}
+            isArrival={phase === 'arrival'}
+            startImmunityFromArrival={startImmunityFromArrival}
+            campArrivalLoading={campArrivalLoading}
+            campArrivalIntroMessages={campArrivalIntroMessages}
             playerHasImmunity={playerHasImmunity}
             immuneCastawayName={immuneCastawayName}
             searchCamp={searchCamp}
-            canSearchCamp={!chatInFlight && phase === 'convo' && !campSearchOpen && !playerHasIdol && searchCount < MAX_CAMP_SEARCHES}
+            canSearchCamp={phase === 'convo' && !chatInFlight && !campSearchOpen && !playerHasIdol && searchCount < MAX_CAMP_SEARCHES}
             idolRevealMoment={idolRevealMoment}
             dismissIdolReveal={() => setIdolRevealMoment('')}
             searchCount={searchCount}
@@ -3152,7 +3313,7 @@ Write the final summary now.`;
             selectCampSearchZone={selectCampSearchZone}
             runCampSearchAction={runCampSearchAction}
             closeCampSearch={() => finishCampSearch(false, 'You cut the search short and returned to camp.')}
-            showPhaseTwoOnboarding={!phaseTwoOnboardingDismissed}
+            showPhaseTwoOnboarding={phase === 'convo' && !phaseTwoOnboardingDismissed}
             dismissPhaseTwoOnboarding={() => setPhaseTwoOnboardingDismissed(true)}
             socialAmbientNotices={socialAmbientNotices}
             castawayCurrentlySearching={castawayCurrentlySearching}
