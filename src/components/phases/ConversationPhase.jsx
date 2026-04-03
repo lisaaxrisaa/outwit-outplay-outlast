@@ -1,4 +1,5 @@
 import React from 'react';
+import CastawayNotesField from '../common/CastawayNotesField';
 
 export default function ConversationPhase(props) {
   const {
@@ -22,12 +23,13 @@ export default function ConversationPhase(props) {
     sendConversation,
     sendCampfireConversation,
     canSendConversation,
-    badgeColor,
     openTribalPhase,
     isArrival,
+    isDebrief,
     startImmunityFromArrival,
-    campArrivalLoading,
-    campArrivalIntroMessages,
+    startNextImmunityFromDebrief,
+    debriefLoading,
+    debriefIntroMessages,
     playerHasImmunity,
     immuneCastawayName,
     searchCamp,
@@ -47,6 +49,10 @@ export default function ConversationPhase(props) {
     canThoroughSearch,
     selectCampSearchZone,
     runCampSearchAction,
+    playerHasIdol,
+    idolPlantRecipientName,
+    setIdolPlantRecipientName,
+    leaveIdolAtCampZone,
     closeCampSearch,
     idolRevealMoment,
     dismissIdolReveal,
@@ -55,7 +61,16 @@ export default function ConversationPhase(props) {
     socialAmbientNotices,
     castawayCurrentlySearching,
     relationshipIntelByName,
-    currentRound
+    currentRound,
+    castawayNotesById,
+    openCastawayNotes,
+    castawayApproachesById,
+    acceptCastawayApproach,
+    dismissCastawayApproach,
+    offerIdolToCastawayPrivately,
+    pendingCastawayIdolOffer,
+    acceptCastawayIdolOffer,
+    declineCastawayIdolOffer
   } = props;
 
   function HelpTip({ text }) {
@@ -97,15 +112,15 @@ export default function ConversationPhase(props) {
   }
 
   return (
-    <section className={`space-y-6 animate-fadeIn ${isArrival ? 'arrival-glow' : ''}`}>
-      {isArrival && (
-        <div className="rounded-2xl border border-amber-300/40 bg-gradient-to-r from-amber-900/20 via-orange-900/15 to-emerald-900/10 p-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Camp Arrival</div>
-          {campArrivalLoading ? (
-            <div className="mt-2 text-sm text-zinc-300">The tribe hits the beach...</div>
+    <section className={`space-y-6 animate-fadeIn ${isArrival || isDebrief ? 'arrival-glow' : ''}`}>
+      {isDebrief && (
+        <div className="rounded-2xl border border-amber-300/40 bg-gradient-to-r from-zinc-900/60 via-orange-900/20 to-amber-900/20 p-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Post-Tribal Debrief</div>
+          {debriefLoading ? (
+            <div className="mt-2 text-sm text-zinc-300">The fire settles as everyone processes the vote...</div>
           ) : (
             <div className="mt-2 space-y-2 text-sm text-zinc-100">
-              {(campArrivalIntroMessages || []).map((m) => (
+              {(debriefIntroMessages || []).map((m) => (
                 <div key={m.id} className="rounded-lg border border-zinc-700/70 bg-black/35 px-3 py-2">
                   <span className="mr-2 text-xs font-semibold uppercase tracking-[0.08em] text-amber-200">{m.speaker}</span>
                   <span>{m.text}</span>
@@ -121,21 +136,29 @@ export default function ConversationPhase(props) {
             <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-300/35 bg-black/65 px-4 py-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.18em] text-amber-200">Search Camp</div>
-                <div className="text-sm text-zinc-200">Pick a zone, take risks, and build enough evidence to unlock a thorough dig.</div>
+                <div className="text-sm text-zinc-200">
+                  {playerHasIdol ? 'Pick a zone, choose who should find it, and leave your idol without drawing heat.' : 'Pick a zone, take risks, and build enough evidence to unlock a thorough dig.'}
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-3 text-right">
+                {!playerHasIdol && (
                 <div>
                   <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Turns</div>
                   <div className="text-2xl font-bold text-amber-200">{campSearchTurnsLeft}</div>
                 </div>
+                )}
+                {!playerHasIdol && (
                 <div>
                   <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Energy</div>
                   <div className="text-2xl font-bold text-emerald-200">{campSearchEnergy}</div>
                 </div>
+                )}
+                {!playerHasIdol && (
                 <div>
                   <div className="text-xs uppercase tracking-[0.14em] text-zinc-400">Suspicion</div>
                   <div className="text-2xl font-bold text-rose-200">{campSearchSuspicion}</div>
                 </div>
+                )}
               </div>
             </div>
 
@@ -156,6 +179,30 @@ export default function ConversationPhase(props) {
             </div>
 
             <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-700 bg-black/55 p-3">
+              {playerHasIdol && (
+                <>
+                  <select
+                    value={idolPlantRecipientName}
+                    onChange={(e) => setIdolPlantRecipientName(e.target.value)}
+                    className="rounded-lg border border-zinc-600 bg-zinc-900/70 px-2 py-1 text-xs text-zinc-100"
+                  >
+                    {castaways.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        Leave for {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={leaveIdolAtCampZone}
+                    disabled={!campSearchZoneId || !idolPlantRecipientName}
+                    className="rounded-lg border border-amber-400/60 bg-amber-900/20 px-3 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Leave Idol
+                  </button>
+                </>
+              )}
+              {!playerHasIdol && (
+              <>
               <button
                 onClick={() => runCampSearchAction('quick')}
                 disabled={!campSearchZoneId || campSearchTurnsLeft <= 0 || campSearchEnergy <= 0}
@@ -173,6 +220,8 @@ export default function ConversationPhase(props) {
               <div className="text-xs text-zinc-300">
                 Thorough unlock: reach 45 progress or bank 1 strong clue. Current progress {idolSearchProgress}/100, clues {idolSearchClues}.
               </div>
+              </>
+              )}
             </div>
 
             <div className="mt-3 min-h-[220px] overflow-y-auto rounded-xl border border-zinc-700 bg-black/55 px-4 py-3">
@@ -204,7 +253,7 @@ export default function ConversationPhase(props) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-4xl tracking-wide text-emerald-200">
-          {isArrival ? 'Camp Arrival' : `Round ${currentRound}: Tribe Conversations`}
+          {isArrival ? 'Camp Arrival' : isDebrief ? 'Post-Tribal Camp' : `Round ${currentRound}: Tribe Conversations`}
         </h2>
         <div className="flex items-center gap-1.5">
           {!isArrival && (
@@ -214,7 +263,7 @@ export default function ConversationPhase(props) {
                 disabled={!canSearchCamp}
                 className="rounded-full border border-zinc-700 bg-black/35 px-3 py-1.5 text-xs uppercase tracking-widest text-zinc-300 transition hover:border-amber-300/70 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Search Camp
+                {playerHasIdol ? 'Leave Idol' : 'Search Camp'}
               </button>
               <span className="rounded-full border border-zinc-700 bg-black/45 px-2 py-1 text-[11px] uppercase tracking-wide text-zinc-400">
                 Searches: {searchCount}/{maxCampSearches}
@@ -316,6 +365,8 @@ export default function ConversationPhase(props) {
         {castaways.map((c) => (
           (() => {
             const intel = relationshipIntelByName?.[c.name] || { status: 'unknown', summary: 'Relationship unknown.' };
+            const note = castawayNotesById?.[c.id] || '';
+            const approach = castawayApproachesById?.[c.id] || null;
             const intelDotClass =
               intel.status === 'ally'
                 ? 'bg-sky-400'
@@ -343,7 +394,7 @@ export default function ConversationPhase(props) {
                 : 'border-zinc-700/70 bg-black/40 hover:border-emerald-300/50 hover:bg-emerald-800/10'
             } ${chatMode === 'campfire' && campfireInvites.includes(c.id) ? 'ring-2 ring-emerald-300/70' : ''} ${
               immuneCastawayName === c.name ? 'ring-2 ring-yellow-300/80 border-yellow-300/70' : ''
-            } ${searching ? 'opacity-70' : ''}`}
+            } ${searching ? 'opacity-70' : ''} ${approach ? 'ring-2 ring-amber-300/80 animate-pulse' : ''}`}
             title={intel.summary}
           >
             <div className="flex items-start justify-between gap-2">
@@ -366,10 +417,43 @@ export default function ConversationPhase(props) {
                   )}
                 </div>
                 <p className="mt-1 text-sm text-zinc-300">{c.occupation}</p>
+                <CastawayNotesField
+                  castawayId={c.id}
+                  castawayName={c.name}
+                  note={note}
+                  onOpen={openCastawayNotes}
+                />
+                {approach && (
+                  <div className="mt-2 rounded-lg border border-amber-300/45 bg-amber-900/20 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-amber-200">{c.name} wants to talk</div>
+                    <div className="mt-1 text-xs text-zinc-100">"{approach.line}"</div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          acceptCastawayApproach(c.id);
+                        }}
+                        className="rounded-md bg-amber-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-950"
+                      >
+                        Talk now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          dismissCastawayApproach(c.id);
+                        }}
+                        className="rounded-md border border-zinc-600 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-200"
+                      >
+                        Later
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <span className="text-sm text-zinc-300">{c.age}</span>
             </div>
-            <span className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeColor(c.personality)}`}>{c.personality}</span>
             {chatMode === 'campfire' && (
               <div className="mt-3">
                 <div className="flex items-center gap-1.5">
@@ -401,6 +485,39 @@ export default function ConversationPhase(props) {
           <h3 className="mb-3 text-lg font-semibold text-orange-200">
             {chatMode === 'campfire' ? 'Campfire' : selectedCastaway ? `1-on-1 with ${selectedCastaway.name}` : 'Select a castaway'}
           </h3>
+          {chatMode !== 'campfire' && selectedCastaway && playerHasIdol && !isArrival && !isDebrief && (
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={offerIdolToCastawayPrivately}
+                className="rounded-md border border-amber-300/45 bg-amber-900/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 hover:border-amber-200/70"
+              >
+                Offer Idol
+              </button>
+            </div>
+          )}
+          {chatMode !== 'campfire' && pendingCastawayIdolOffer && selectedCastaway?.id === pendingCastawayIdolOffer.castawayId && (
+            <div className="mb-3 rounded-xl border border-amber-300/45 bg-amber-900/20 p-3">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-amber-200">{pendingCastawayIdolOffer.castawayName} offered you an idol</div>
+              <div className="mt-1 text-xs text-zinc-100">Accepting transfers the idol to you immediately.</div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={acceptCastawayIdolOffer}
+                  className="rounded-md bg-amber-400 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-950"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={declineCastawayIdolOffer}
+                  className="rounded-md border border-zinc-600 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-200"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          )}
           {chatMode === 'campfire' && (
             <div className="mb-3 rounded-xl border border-zinc-700/70 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-300">
               {invitedCastawayNames.length > 0 ? `Invited: ${invitedCastawayNames.join(', ')}` : 'Open Campfire'}
@@ -475,16 +592,28 @@ export default function ConversationPhase(props) {
           <p className="mt-2 text-sm text-zinc-300">
             {isArrival
               ? "You're all meeting for the first time. Keep talking, read first impressions, and move when you're ready."
+              : isDebrief
+              ? 'A vote just happened. Read the room, repair what you can, and decide when to face the next challenge.'
               : "Speak to whoever you want, for as long as you need. Everyone's hiding something. When you think you've figured it out - head to Tribal Council."}
           </p>
           <button
-            onClick={isArrival ? startImmunityFromArrival : openTribalPhase}
-            className={`mt-5 w-full rounded-xl px-4 py-3 text-sm font-bold text-zinc-100 ${isArrival ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-zinc-950' : 'bg-gradient-to-r from-red-500 to-orange-500 animate-pulseGlow'}`}
+            onClick={isArrival ? startImmunityFromArrival : isDebrief ? startNextImmunityFromDebrief : openTribalPhase}
+            className={`mt-5 w-full rounded-xl px-4 py-3 text-sm font-bold text-zinc-100 ${
+              isArrival || isDebrief ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-zinc-950' : 'bg-gradient-to-r from-red-500 to-orange-500 animate-pulseGlow'
+            }`}
           >
-            {isArrival ? 'Head to Immunity Challenge' : 'Head to Tribal Council 🔥'}
+            {isArrival ? 'Head to Immunity Challenge' : isDebrief ? 'Head to Next Immunity Challenge' : 'Head to Tribal Council 🔥'}
           </button>
           <div className="mt-2 flex justify-end">
-            <HelpTip text={isArrival ? 'You can move to the immunity challenge whenever you are ready.' : "Once you leave for tribal, there's no coming back. Make sure you know your vote."} />
+            <HelpTip
+              text={
+                isArrival
+                  ? 'You can move to the immunity challenge whenever you are ready.'
+                  : isDebrief
+                  ? 'Stay as long as you want. Move on when you have read the fallout from tonight.'
+                  : "Once you leave for tribal, there's no coming back. Make sure you know your vote."
+              }
+            />
           </div>
         </div>
       </div>

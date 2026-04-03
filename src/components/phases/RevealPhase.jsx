@@ -1,6 +1,19 @@
 import React from 'react';
+import CastawayNotesField from '../common/CastawayNotesField';
 
-export default function RevealPhase({ revealLoading, revealData, castaways, onContinue, continueLabel = 'Continue' }) {
+export default function RevealPhase({
+  revealLoading,
+  revealData,
+  castaways,
+  onContinue,
+  continueLabel = 'Continue',
+  continueLoading = false,
+  continueLoadingLabel = 'Working...',
+  castawayNotesById,
+  openCastawayNotes
+}) {
+  const castawayByName = Object.fromEntries(castaways.map((c) => [c.name, c]));
+
   return (
     <section className="animate-fadeIn">
       <div className="mx-auto max-w-5xl rounded-3xl border border-amber-300/30 dossier p-6 sm:p-8">
@@ -22,7 +35,14 @@ export default function RevealPhase({ revealLoading, revealData, castaways, onCo
                 {castaways.map((c) => (
                   <div key={c.id} className="rounded-xl border border-zinc-700/70 bg-black/35 p-4">
                     <div className="text-sm font-semibold text-zinc-100">{c.name}</div>
+                    <div className="mt-1 text-xs text-zinc-400">{c.occupation}</div>
                     <div className="mt-1 text-sm text-zinc-300">{c.hiddenAgenda}</div>
+                    <CastawayNotesField
+                      castawayId={c.id}
+                      castawayName={c.name}
+                      note={castawayNotesById?.[c.id] || ''}
+                      onOpen={openCastawayNotes}
+                    />
                   </div>
                 ))}
               </div>
@@ -52,6 +72,14 @@ export default function RevealPhase({ revealLoading, revealData, castaways, onCo
                   <div key={`${t.name}-${idx}`} className="rounded-xl border border-zinc-700/70 bg-black/35 p-4">
                     <div className="text-sm font-semibold text-zinc-100">{t.name}</div>
                     <div className="mt-1 text-sm text-zinc-300">{t.thought}</div>
+                    {castawayByName[t.name] && (
+                      <CastawayNotesField
+                        castawayId={castawayByName[t.name].id}
+                        castawayName={t.name}
+                        note={castawayNotesById?.[castawayByName[t.name].id] || ''}
+                        onOpen={openCastawayNotes}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -67,6 +95,14 @@ export default function RevealPhase({ revealLoading, revealData, castaways, onCo
                       {f.toldPlayer && <div className="mt-1 text-zinc-200">Told you: {f.toldPlayer}</div>}
                       <div className="mt-1 text-zinc-200">Actually did: {f.did}</div>
                       {f.why && <div className="mt-1 text-zinc-300">Why: {f.why}</div>}
+                      {castawayByName[f.name] && (
+                        <CastawayNotesField
+                          castawayId={castawayByName[f.name].id}
+                          castawayName={f.name}
+                          note={castawayNotesById?.[castawayByName[f.name].id] || ''}
+                          onOpen={openCastawayNotes}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -89,9 +125,10 @@ export default function RevealPhase({ revealLoading, revealData, castaways, onCo
 
             <button
               onClick={onContinue}
-              className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-3 text-sm font-bold text-zinc-950"
+              disabled={continueLoading}
+              className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-4 py-3 text-sm font-bold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {continueLabel}
+              {continueLoading ? continueLoadingLabel : continueLabel}
             </button>
           </div>
         )}

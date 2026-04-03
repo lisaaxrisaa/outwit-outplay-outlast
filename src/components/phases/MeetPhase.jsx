@@ -1,6 +1,14 @@
 import React from 'react';
 
-export default function MeetPhase({ playerNameInput, setPlayerNameInput, playerOccupationInput, setPlayerOccupationInput, generateCastaways, generatingCastaways }) {
+export default function MeetPhase({
+  playerNameInput,
+  setPlayerNameInput,
+  playerOccupationInput,
+  setPlayerOccupationInput,
+  generateCastaways,
+  generatingCastaways,
+  generatingCastawaysLabel = 'Summoning Castaways...'
+}) {
   return (
     <section className="mx-auto max-w-2xl animate-fadeIn">
       <div className="rounded-2xl border border-emerald-300/20 bg-black/45 p-6 backdrop-blur">
@@ -27,7 +35,7 @@ export default function MeetPhase({ playerNameInput, setPlayerNameInput, playerO
             disabled={generatingCastaways}
             className="rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 px-5 py-3 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
           >
-            {generatingCastaways ? 'Summoning Castaways...' : 'Generate Castaways'}
+            {generatingCastaways ? generatingCastawaysLabel : 'Generate Castaways'}
           </button>
         </form>
       </div>

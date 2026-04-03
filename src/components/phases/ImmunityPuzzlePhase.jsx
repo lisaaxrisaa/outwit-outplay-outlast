@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CHALLENGE_META } from '../../lib/gameUtils';
+import CastawayNotesField from '../common/CastawayNotesField';
 
 const JIGSAW_FALLBACK_BG = 'linear-gradient(135deg, #6b2f12 0%, #92400e 45%, #3d1907 100%)';
 
@@ -373,7 +374,9 @@ export default function ImmunityPuzzlePhase(props) {
     castawayRaceProgress,
     castawayRaceWinner,
     castawayRaceTick,
-    giveUpImmunityChallenge
+    giveUpImmunityChallenge,
+    castawayNotesById,
+    openCastawayNotes
   } = props;
   const {
     ropeChallenge,
@@ -425,6 +428,7 @@ export default function ImmunityPuzzlePhase(props) {
   function renderCastawayPanel(c) {
     const progress = clampProgress(castawayRaceProgress[c.name] || 0);
     const isWinner = castawayRaceWinner === c.name;
+    const note = castawayNotesById?.[c.id] || '';
     return (
       <div
         key={`race-${c.id}`}
@@ -449,6 +453,7 @@ export default function ImmunityPuzzlePhase(props) {
           torchChallenge={torchChallenge}
         />
         <div className="mt-2 text-[10px] uppercase tracking-wide text-zinc-400">{getPaceLabel(c.personality, progress)}</div>
+        <CastawayNotesField castawayId={c.id} castawayName={c.name} note={note} onOpen={openCastawayNotes} />
         {isWinner && <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest text-yellow-100">{c.name} wins immunity</div>}
       </div>
     );

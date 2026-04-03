@@ -1,4 +1,5 @@
 import React from 'react';
+import CastawayNotesField from '../common/CastawayNotesField';
 
 export default function TribalPhase(props) {
   const {
@@ -24,7 +25,10 @@ export default function TribalPhase(props) {
     playerHasFakeIdol,
     idolPlayTarget,
     setIdolPlayTarget,
+    idolGiveTarget,
+    setIdolGiveTarget,
     playPlayerIdol,
+    givePlayerIdolAtTribal,
     idolPlayedByPlayer,
     idolPlayedFakeByPlayer,
     idolProtectedName,
@@ -32,7 +36,9 @@ export default function TribalPhase(props) {
     shownVotes,
     revealedVotesCount,
     votes,
-    eliminatedName
+    eliminatedName,
+    castawayNotesById,
+    openCastawayNotes
   } = props;
 
   return (
@@ -40,6 +46,18 @@ export default function TribalPhase(props) {
       <div className="mx-auto max-w-4xl rounded-3xl border border-orange-300/30 bg-black/75 p-6 backdrop-blur-md sm:p-8">
         <h2 className="text-center font-display text-5xl tracking-wider text-orange-200">Tribal Council</h2>
         <p className="mt-2 text-center text-sm text-zinc-300">The torches are lit. Pick one castaway to vote out.</p>
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {castaways.map((c) => {
+            const note = castawayNotesById?.[c.id] || '';
+            return (
+              <div key={`tribal-note-${c.id}`} className="rounded-xl border border-zinc-700/70 bg-black/35 p-3">
+                <div className="text-sm font-semibold text-zinc-100">{c.name}</div>
+                <div className="text-xs text-zinc-400">{c.occupation}</div>
+                <CastawayNotesField castawayId={c.id} castawayName={c.name} note={note} onOpen={openCastawayNotes} />
+              </div>
+            );
+          })}
+        </div>
 
         <div
           ref={tribalScrollRef}
@@ -141,6 +159,28 @@ export default function TribalPhase(props) {
                   >
                     Play Idol 🔥
                   </button>
+                  {playerHasIdol && !playerHasFakeIdol && (
+                    <>
+                      <select
+                        value={idolGiveTarget}
+                        onChange={(e) => setIdolGiveTarget(e.target.value)}
+                        className="rounded-lg border border-zinc-600 bg-zinc-900/70 px-2 py-1 text-xs text-zinc-100"
+                      >
+                        {castaways.map((c) => (
+                          <option key={`gift-${c.name}`} value={c.name}>
+                            Give to {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={givePlayerIdolAtTribal}
+                        disabled={idolPlayedByPlayer}
+                        className="rounded-lg border border-yellow-200/50 bg-black/25 px-3 py-1.5 text-xs font-semibold text-yellow-100 disabled:opacity-55"
+                      >
+                        Give Idol
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}

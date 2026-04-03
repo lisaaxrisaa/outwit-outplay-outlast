@@ -6,16 +6,17 @@ import ImmunityIntroPhase from './components/phases/ImmunityIntroPhase';
 import ImmunityPepPhase from './components/phases/ImmunityPepPhase';
 import ImmunityPuzzlePhase from './components/phases/ImmunityPuzzlePhase';
 import ImmunityResultPhase from './components/phases/ImmunityResultPhase';
+import ArrivalIntroPhase from './components/phases/ArrivalIntroPhase';
 import ConversationPhase from './components/phases/ConversationPhase';
 import TribalPhase from './components/phases/TribalPhase';
 import RevealPhase from './components/phases/RevealPhase';
 import BetweenRoundsPhase from './components/phases/BetweenRoundsPhase';
 import GameSummaryPhase from './components/phases/GameSummaryPhase';
 import FinalPhase from './components/phases/FinalPhase';
+import CastawayNotesModal from './components/common/CastawayNotesModal';
 import {
   CHALLENGE_META,
   SEQUENCE_SYMBOLS,
-  badgeColor,
   callClaude,
   createCipherChallenge,
   createJigsawPieces,
@@ -93,6 +94,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const SUPABASE_WAITLIST_TABLE = import.meta.env.VITE_SUPABASE_WAITLIST_TABLE || 'waitlist_signups';
 const CLAUDE_CLIENT_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
+const GAME_SAVE_KEY = 'outwit:game-save:v1';
+const GAME_SAVE_VERSION = 1;
 const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 function pickRandomJigsawImage(excludeUrl = '') {
@@ -211,6 +214,8 @@ export default function App() {
   const [torchChallenge, setTorchChallenge] = useState(createTorchLightingChallenge());
 
   const [castaways, setCastaways] = useState([]);
+  const [castawayNotesById, setCastawayNotesById] = useState({});
+  const [activeNotesCastawayId, setActiveNotesCastawayId] = useState(null);
   const [selectedCastawayId, setSelectedCastawayId] = useState(null);
   const [conversationHistories, setConversationHistories] = useState({});
   const [campfireHistory, setCampfireHistory] = useState([]);
@@ -219,12 +224,22 @@ export default function App() {
   const [arrivalDistinctContacts, setArrivalDistinctContacts] = useState([]);
   const [arrivalNudgeThreshold, setArrivalNudgeThreshold] = useState(3);
   const [arrivalNudgeDone, setArrivalNudgeDone] = useState(false);
+  const [debriefIntroMessages, setDebriefIntroMessages] = useState([]);
+  const [debriefLoading, setDebriefLoading] = useState(false);
+  const [debriefDistinctContacts, setDebriefDistinctContacts] = useState([]);
+  const [debriefNudgeThreshold, setDebriefNudgeThreshold] = useState(3);
+  const [debriefNudgeDone, setDebriefNudgeDone] = useState(false);
   const [conversationInput, setConversationInput] = useState('');
   const [chatMode, setChatMode] = useState('oneOnOne');
   const [campfireInvites, setCampfireInvites] = useState([]);
   const [phaseTwoOnboardingDismissed, setPhaseTwoOnboardingDismissed] = useState(false);
   const [campfireRecentlyInvited, setCampfireRecentlyInvited] = useState([]);
   const [campfireRecentlyUninvited, setCampfireRecentlyUninvited] = useState([]);
+  const [castawayApproachesById, setCastawayApproachesById] = useState({});
+  const [approachCountByPhase, setApproachCountByPhase] = useState({});
+  const [approachIgnoredByName, setApproachIgnoredByName] = useState({});
+  const [campSocialActivityScore, setCampSocialActivityScore] = useState(0);
+  const [approachDramaBoost, setApproachDramaBoost] = useState(0);
   const [playerSearchedCamp, setPlayerSearchedCamp] = useState(false);
   const [playerSearchNoticedBy, setPlayerSearchNoticedBy] = useState([]);
   const [searchCount, setSearchCount] = useState(0);
@@ -251,11 +266,19 @@ export default function App() {
   const [playerHasIdol, setPlayerHasIdol] = useState(false);
   const [playerHasFakeIdol, setPlayerHasFakeIdol] = useState(false);
   const [castawayHasIdolName, setCastawayHasIdolName] = useState('');
+  const [idolGiveTarget, setIdolGiveTarget] = useState('');
+  const [idolGivenPublicByPlayer, setIdolGivenPublicByPlayer] = useState(false);
+  const [idolGivenPublicByCastaway, setIdolGivenPublicByCastaway] = useState('');
+  const [pendingCastawayIdolOffer, setPendingCastawayIdolOffer] = useState(null);
+  const [idolPlantPlan, setIdolPlantPlan] = useState(null);
+  const [idolPlantRecipientName, setIdolPlantRecipientName] = useState('');
+  const [idolTransferLog, setIdolTransferLog] = useState([]);
   const [fakeIdolPlanted, setFakeIdolPlanted] = useState(false);
   const [fakeIdolPlanterName, setFakeIdolPlanterName] = useState('');
   const [idolRevealMoment, setIdolRevealMoment] = useState('');
 
   const [generatingCastaways, setGeneratingCastaways] = useState(false);
+  const [generatingCastawaysLabel, setGeneratingCastawaysLabel] = useState('The tribe is arriving...');
   const [chatInFlight, setChatInFlight] = useState(false);
   const [error, setError] = useState('');
 
@@ -277,6 +300,7 @@ export default function App() {
   const [tribalPlayerCheckInThreshold, setTribalPlayerCheckInThreshold] = useState(Math.random() < 0.5 ? 2 : 3);
 
   const [revealLoading, setRevealLoading] = useState(false);
+  const [revealContinueLoading, setRevealContinueLoading] = useState(false);
   const [revealData, setRevealData] = useState(null);
   const [currentRound, setCurrentRound] = useState(1);
   const [roundChallengeTypes, setRoundChallengeTypes] = useState({});
@@ -309,8 +333,10 @@ export default function App() {
   const chatScrollRef = useRef(null);
   const tribalScrollRef = useRef(null);
   const campSearchActionLockRef = useRef(false);
+  const saveHydratedRef = useRef(false);
 
   const selectedCastaway = useMemo(() => castaways.find((c) => c.id === selectedCastawayId) || null, [castaways, selectedCastawayId]);
+  const activeNotesCastaway = useMemo(() => castaways.find((c) => c.id === activeNotesCastawayId) || null, [castaways, activeNotesCastawayId]);
   const selectedHistory = useMemo(() => (selectedCastawayId ? conversationHistories[selectedCastawayId] || [] : []), [conversationHistories, selectedCastawayId]);
   const activeHistory = useMemo(() => (chatMode === 'campfire' ? campfireHistory : selectedHistory), [chatMode, campfireHistory, selectedHistory]);
   const invitedCastawayNames = useMemo(() => castaways.filter((c) => campfireInvites.includes(c.id)).map((c) => c.name), [castaways, campfireInvites]);
@@ -322,6 +348,286 @@ export default function App() {
   );
   const torchStatus = useMemo(() => evaluateTorchGrid(torchChallenge), [torchChallenge]);
 
+  function buildPersistedGameState() {
+    return {
+      phase,
+      playerNameInput,
+      playerOccupationInput,
+      playerName,
+      playerOccupation,
+      playerHasImmunity,
+      immunityType,
+      immunityCountdown,
+      immunityTimer,
+      immunityResult,
+      immunityGivenUp,
+      immunityPepTalk,
+      immuneCastawayName,
+      castawayRaceProgress,
+      castawayRaceWinner,
+      castawayRaceTick,
+      slidingBoard,
+      memoryDeck,
+      memoryFlipped,
+      cipherData,
+      cipherGuess,
+      mazeGrid,
+      mazePos,
+      jigsawPieces,
+      jigsawSelected,
+      jigsawImageUrl,
+      ropeChallenge,
+      sequenceChallenge,
+      waterChallenge,
+      torchChallenge,
+      castaways,
+      castawayNotesById,
+      selectedCastawayId,
+      conversationHistories,
+      campfireHistory,
+      campArrivalIntroMessages,
+      arrivalDistinctContacts,
+      arrivalNudgeThreshold,
+      arrivalNudgeDone,
+      debriefIntroMessages,
+      debriefDistinctContacts,
+      debriefNudgeThreshold,
+      debriefNudgeDone,
+      conversationInput,
+      chatMode,
+      campfireInvites,
+      phaseTwoOnboardingDismissed,
+      campfireRecentlyInvited,
+      campfireRecentlyUninvited,
+      castawayApproachesById,
+      approachCountByPhase,
+      approachIgnoredByName,
+      campSocialActivityScore,
+      approachDramaBoost,
+      playerSearchedCamp,
+      playerSearchNoticedBy,
+      searchCount,
+      searchSuspicionScore,
+      campSearchOpen,
+      campSearchTurnsLeft,
+      campSearchEnergy,
+      campSearchSuspicion,
+      campSearchZoneId,
+      campSearchLog,
+      idolSearchProgress,
+      idolSearchClues,
+      idolZoneId,
+      clueZoneId,
+      fakeIdolZoneId,
+      playerFoundClueScroll,
+      castawayClueFinderName,
+      castawayIdolFinderName,
+      castawayCurrentlySearching,
+      idolLocation,
+      idolClueHolderId,
+      playerHeardIdolClue,
+      playerHasIdol,
+      playerHasFakeIdol,
+      castawayHasIdolName,
+      idolGiveTarget,
+      idolGivenPublicByPlayer,
+      idolGivenPublicByCastaway,
+      pendingCastawayIdolOffer,
+      idolPlantPlan,
+      idolPlantRecipientName,
+      idolTransferLog,
+      fakeIdolPlanted,
+      fakeIdolPlanterName,
+      idolRevealMoment,
+      tribalSelection,
+      votes,
+      revealedVotesCount,
+      tribalStarted,
+      eliminatedName,
+      tribalHostOpening,
+      tribalPublicHistory,
+      tribalChatInput,
+      tribalPlayerMessages,
+      tribalVoteCalled,
+      tribalHostLinesUsed,
+      tribalVoteConfirming,
+      tribalAwaitingPlayer,
+      tribalCastawayExchangesSincePlayer,
+      tribalPlayerCheckInThreshold,
+      revealData,
+      currentRound,
+      roundChallengeTypes,
+      roundRecap,
+      roundHistoryArchive,
+      betweenRoundSummary,
+      betweenRoundLinks,
+      finalGameSummary,
+      socialObservations,
+      socialAmbientNotices,
+      lastObservedOneOnOneKey,
+      relationshipIntelByName,
+      notifyEmail,
+      notifyMessage,
+      idolPlayTarget,
+      idolPlayedByPlayer,
+      idolPlayedFakeByPlayer,
+      idolPlayedByCastaway,
+      idolProtectedName,
+      idolAnnouncement,
+      idolOutcome
+    };
+  }
+
+  function restorePersistedGameState(data) {
+    if (!data || typeof data !== 'object') return;
+    const has = (key) => Object.prototype.hasOwnProperty.call(data, key);
+
+    if (has('phase')) setPhase(data.phase);
+    if (has('playerNameInput')) setPlayerNameInput(data.playerNameInput);
+    if (has('playerOccupationInput')) setPlayerOccupationInput(data.playerOccupationInput);
+    if (has('playerName')) setPlayerName(data.playerName);
+    if (has('playerOccupation')) setPlayerOccupation(data.playerOccupation);
+    if (has('playerHasImmunity')) setPlayerHasImmunity(Boolean(data.playerHasImmunity));
+    if (has('immunityType')) setImmunityType(data.immunityType);
+    if (has('immunityCountdown')) setImmunityCountdown(Number(data.immunityCountdown) || 0);
+    if (has('immunityTimer')) setImmunityTimer(Number(data.immunityTimer) || 0);
+    if (has('immunityResult')) setImmunityResult(data.immunityResult);
+    if (has('immunityGivenUp')) setImmunityGivenUp(Boolean(data.immunityGivenUp));
+    if (has('immunityPepTalk')) setImmunityPepTalk(data.immunityPepTalk);
+    if (has('immuneCastawayName')) setImmuneCastawayName(data.immuneCastawayName);
+    if (has('castawayRaceProgress')) setCastawayRaceProgress(data.castawayRaceProgress || {});
+    if (has('castawayRaceWinner')) setCastawayRaceWinner(data.castawayRaceWinner || '');
+    if (has('castawayRaceTick')) setCastawayRaceTick(Number(data.castawayRaceTick) || 0);
+
+    if (has('slidingBoard')) setSlidingBoard(Array.isArray(data.slidingBoard) ? data.slidingBoard : createSlidingBoard());
+    if (has('memoryDeck')) setMemoryDeck(Array.isArray(data.memoryDeck) ? data.memoryDeck : createMemoryDeck());
+    if (has('memoryFlipped')) setMemoryFlipped(Array.isArray(data.memoryFlipped) ? data.memoryFlipped : []);
+    if (has('cipherData')) setCipherData(data.cipherData || createCipherChallenge());
+    if (has('cipherGuess')) setCipherGuess(data.cipherGuess || '');
+    if (has('mazeGrid')) setMazeGrid(Array.isArray(data.mazeGrid) ? data.mazeGrid : createMaze(8));
+    if (has('mazePos')) setMazePos(data.mazePos || { x: 0, y: 0 });
+    if (has('jigsawPieces')) setJigsawPieces(Array.isArray(data.jigsawPieces) ? data.jigsawPieces : createJigsawPieces());
+    if (has('jigsawSelected')) setJigsawSelected(data.jigsawSelected ?? null);
+    if (has('jigsawImageUrl')) setJigsawImageUrl(data.jigsawImageUrl || pickRandomJigsawImage());
+    if (has('ropeChallenge')) setRopeChallenge(data.ropeChallenge || createRopeUntangleChallenge());
+    if (has('sequenceChallenge')) setSequenceChallenge(data.sequenceChallenge || createSequenceChallenge());
+    if (has('waterChallenge')) setWaterChallenge(data.waterChallenge || createWaterPouringChallenge());
+    if (has('torchChallenge')) setTorchChallenge(data.torchChallenge || createTorchLightingChallenge());
+
+    if (has('castaways')) setCastaways(Array.isArray(data.castaways) ? data.castaways : []);
+    if (has('castawayNotesById')) setCastawayNotesById(data.castawayNotesById || {});
+    if (has('selectedCastawayId')) setSelectedCastawayId(data.selectedCastawayId ?? null);
+    if (has('conversationHistories')) setConversationHistories(data.conversationHistories || {});
+    if (has('campfireHistory')) setCampfireHistory(Array.isArray(data.campfireHistory) ? data.campfireHistory : []);
+    if (has('campArrivalIntroMessages')) setCampArrivalIntroMessages(Array.isArray(data.campArrivalIntroMessages) ? data.campArrivalIntroMessages : []);
+    if (has('arrivalDistinctContacts')) setArrivalDistinctContacts(Array.isArray(data.arrivalDistinctContacts) ? data.arrivalDistinctContacts : []);
+    if (has('arrivalNudgeThreshold')) setArrivalNudgeThreshold(Number(data.arrivalNudgeThreshold) || 3);
+    if (has('arrivalNudgeDone')) setArrivalNudgeDone(Boolean(data.arrivalNudgeDone));
+    if (has('debriefIntroMessages')) setDebriefIntroMessages(Array.isArray(data.debriefIntroMessages) ? data.debriefIntroMessages : []);
+    if (has('debriefDistinctContacts')) setDebriefDistinctContacts(Array.isArray(data.debriefDistinctContacts) ? data.debriefDistinctContacts : []);
+    if (has('debriefNudgeThreshold')) setDebriefNudgeThreshold(Number(data.debriefNudgeThreshold) || 3);
+    if (has('debriefNudgeDone')) setDebriefNudgeDone(Boolean(data.debriefNudgeDone));
+    if (has('conversationInput')) setConversationInput(data.conversationInput || '');
+    if (has('chatMode')) setChatMode(data.chatMode || 'oneOnOne');
+    if (has('campfireInvites')) setCampfireInvites(Array.isArray(data.campfireInvites) ? data.campfireInvites : []);
+    if (has('phaseTwoOnboardingDismissed')) setPhaseTwoOnboardingDismissed(Boolean(data.phaseTwoOnboardingDismissed));
+    if (has('campfireRecentlyInvited')) setCampfireRecentlyInvited(Array.isArray(data.campfireRecentlyInvited) ? data.campfireRecentlyInvited : []);
+    if (has('campfireRecentlyUninvited')) setCampfireRecentlyUninvited(Array.isArray(data.campfireRecentlyUninvited) ? data.campfireRecentlyUninvited : []);
+    if (has('castawayApproachesById')) setCastawayApproachesById(data.castawayApproachesById || {});
+    if (has('approachCountByPhase')) setApproachCountByPhase(data.approachCountByPhase || {});
+    if (has('approachIgnoredByName')) setApproachIgnoredByName(data.approachIgnoredByName || {});
+    if (has('campSocialActivityScore')) setCampSocialActivityScore(Number(data.campSocialActivityScore) || 0);
+    if (has('approachDramaBoost')) setApproachDramaBoost(Number(data.approachDramaBoost) || 0);
+    if (has('playerSearchedCamp')) setPlayerSearchedCamp(Boolean(data.playerSearchedCamp));
+    if (has('playerSearchNoticedBy')) setPlayerSearchNoticedBy(Array.isArray(data.playerSearchNoticedBy) ? data.playerSearchNoticedBy : []);
+    if (has('searchCount')) setSearchCount(Number(data.searchCount) || 0);
+    if (has('searchSuspicionScore')) setSearchSuspicionScore(Number(data.searchSuspicionScore) || 0);
+    if (has('campSearchOpen')) setCampSearchOpen(Boolean(data.campSearchOpen));
+    if (has('campSearchTurnsLeft')) setCampSearchTurnsLeft(Number(data.campSearchTurnsLeft) || 0);
+    if (has('campSearchEnergy')) setCampSearchEnergy(Number(data.campSearchEnergy) || 0);
+    if (has('campSearchSuspicion')) setCampSearchSuspicion(Number(data.campSearchSuspicion) || 0);
+    if (has('campSearchZoneId')) setCampSearchZoneId(data.campSearchZoneId || '');
+    if (has('campSearchLog')) setCampSearchLog(Array.isArray(data.campSearchLog) ? data.campSearchLog : []);
+    if (has('idolSearchProgress')) setIdolSearchProgress(Number(data.idolSearchProgress) || 0);
+    if (has('idolSearchClues')) setIdolSearchClues(Number(data.idolSearchClues) || 0);
+    if (has('idolZoneId')) setIdolZoneId(data.idolZoneId || 'firepit');
+    if (has('clueZoneId')) setClueZoneId(data.clueZoneId || 'rocks');
+    if (has('fakeIdolZoneId')) setFakeIdolZoneId(data.fakeIdolZoneId || 'shoreline');
+    if (has('playerFoundClueScroll')) setPlayerFoundClueScroll(Boolean(data.playerFoundClueScroll));
+    if (has('castawayClueFinderName')) setCastawayClueFinderName(data.castawayClueFinderName || '');
+    if (has('castawayIdolFinderName')) setCastawayIdolFinderName(data.castawayIdolFinderName || '');
+    if (has('castawayCurrentlySearching')) setCastawayCurrentlySearching(Array.isArray(data.castawayCurrentlySearching) ? data.castawayCurrentlySearching : []);
+
+    if (has('idolLocation')) setIdolLocation(data.idolLocation || '');
+    if (has('idolClueHolderId')) setIdolClueHolderId(data.idolClueHolderId || '');
+    if (has('playerHeardIdolClue')) setPlayerHeardIdolClue(Boolean(data.playerHeardIdolClue));
+    if (has('playerHasIdol')) setPlayerHasIdol(Boolean(data.playerHasIdol));
+    if (has('playerHasFakeIdol')) setPlayerHasFakeIdol(Boolean(data.playerHasFakeIdol));
+    if (has('castawayHasIdolName')) setCastawayHasIdolName(data.castawayHasIdolName || '');
+    if (has('idolGiveTarget')) setIdolGiveTarget(data.idolGiveTarget || '');
+    if (has('idolGivenPublicByPlayer')) setIdolGivenPublicByPlayer(Boolean(data.idolGivenPublicByPlayer));
+    if (has('idolGivenPublicByCastaway')) setIdolGivenPublicByCastaway(data.idolGivenPublicByCastaway || '');
+    if (has('pendingCastawayIdolOffer')) setPendingCastawayIdolOffer(data.pendingCastawayIdolOffer || null);
+    if (has('idolPlantPlan')) setIdolPlantPlan(data.idolPlantPlan || null);
+    if (has('idolPlantRecipientName')) setIdolPlantRecipientName(data.idolPlantRecipientName || '');
+    if (has('idolTransferLog')) setIdolTransferLog(Array.isArray(data.idolTransferLog) ? data.idolTransferLog : []);
+    if (has('fakeIdolPlanted')) setFakeIdolPlanted(Boolean(data.fakeIdolPlanted));
+    if (has('fakeIdolPlanterName')) setFakeIdolPlanterName(data.fakeIdolPlanterName || '');
+    if (has('idolRevealMoment')) setIdolRevealMoment(data.idolRevealMoment || '');
+
+    if (has('tribalSelection')) setTribalSelection(data.tribalSelection || '');
+    if (has('votes')) setVotes(Array.isArray(data.votes) ? data.votes : []);
+    if (has('revealedVotesCount')) setRevealedVotesCount(Number(data.revealedVotesCount) || 0);
+    if (has('tribalStarted')) setTribalStarted(Boolean(data.tribalStarted));
+    if (has('eliminatedName')) setEliminatedName(data.eliminatedName || '');
+    if (has('tribalHostOpening')) setTribalHostOpening(data.tribalHostOpening || '');
+    if (has('tribalPublicHistory')) setTribalPublicHistory(Array.isArray(data.tribalPublicHistory) ? data.tribalPublicHistory : []);
+    if (has('tribalChatInput')) setTribalChatInput(data.tribalChatInput || '');
+    if (has('tribalPlayerMessages')) setTribalPlayerMessages(Number(data.tribalPlayerMessages) || 0);
+    if (has('tribalVoteCalled')) setTribalVoteCalled(Boolean(data.tribalVoteCalled));
+    if (has('tribalHostLinesUsed')) setTribalHostLinesUsed(Array.isArray(data.tribalHostLinesUsed) ? data.tribalHostLinesUsed : []);
+    if (has('tribalVoteConfirming')) setTribalVoteConfirming(Boolean(data.tribalVoteConfirming));
+    if (has('tribalAwaitingPlayer')) setTribalAwaitingPlayer(Boolean(data.tribalAwaitingPlayer));
+    if (has('tribalCastawayExchangesSincePlayer')) setTribalCastawayExchangesSincePlayer(Number(data.tribalCastawayExchangesSincePlayer) || 0);
+    if (has('tribalPlayerCheckInThreshold')) setTribalPlayerCheckInThreshold(Number(data.tribalPlayerCheckInThreshold) || 2);
+
+    if (has('revealData')) setRevealData(data.revealData || null);
+    if (has('currentRound')) setCurrentRound(Number(data.currentRound) || 1);
+    if (has('roundChallengeTypes')) setRoundChallengeTypes(data.roundChallengeTypes || {});
+    if (has('roundRecap')) setRoundRecap(Array.isArray(data.roundRecap) ? data.roundRecap : []);
+    if (has('roundHistoryArchive')) setRoundHistoryArchive(Array.isArray(data.roundHistoryArchive) ? data.roundHistoryArchive : []);
+    if (has('betweenRoundSummary')) setBetweenRoundSummary(data.betweenRoundSummary || '');
+    if (has('betweenRoundLinks')) setBetweenRoundLinks(Array.isArray(data.betweenRoundLinks) ? data.betweenRoundLinks : []);
+    if (has('finalGameSummary')) setFinalGameSummary(data.finalGameSummary || '');
+    if (has('socialObservations')) setSocialObservations(Array.isArray(data.socialObservations) ? data.socialObservations : []);
+    if (has('socialAmbientNotices')) setSocialAmbientNotices(Array.isArray(data.socialAmbientNotices) ? data.socialAmbientNotices : []);
+    if (has('lastObservedOneOnOneKey')) setLastObservedOneOnOneKey(data.lastObservedOneOnOneKey || '');
+    if (has('relationshipIntelByName')) setRelationshipIntelByName(data.relationshipIntelByName || {});
+
+    if (has('notifyEmail')) setNotifyEmail(data.notifyEmail || '');
+    if (has('notifyMessage')) setNotifyMessage(data.notifyMessage || '');
+
+    if (has('idolPlayTarget')) setIdolPlayTarget(data.idolPlayTarget || '');
+    if (has('idolPlayedByPlayer')) setIdolPlayedByPlayer(Boolean(data.idolPlayedByPlayer));
+    if (has('idolPlayedFakeByPlayer')) setIdolPlayedFakeByPlayer(Boolean(data.idolPlayedFakeByPlayer));
+    if (has('idolPlayedByCastaway')) setIdolPlayedByCastaway(data.idolPlayedByCastaway || '');
+    if (has('idolProtectedName')) setIdolProtectedName(data.idolProtectedName || '');
+    if (has('idolAnnouncement')) setIdolAnnouncement(data.idolAnnouncement || '');
+    if (has('idolOutcome')) setIdolOutcome(data.idolOutcome || null);
+
+    setImmunityPepLoading(false);
+    setCampArrivalLoading(false);
+    setDebriefLoading(false);
+    setGeneratingCastaways(false);
+    setChatInFlight(false);
+    setTribalHostLoading(false);
+    setRevealLoading(false);
+    setRevealContinueLoading(false);
+    setBetweenRoundBriefLoading(false);
+    setNotifySubmitting(false);
+    setError('');
+  }
+
   useEffect(() => {
     return () => {
       Object.values(waitingIntervalsRef.current).forEach((id) => clearInterval(id));
@@ -332,9 +638,75 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(GAME_SAVE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Number(parsed?.version) !== GAME_SAVE_VERSION || !parsed?.data || typeof parsed.data !== 'object') {
+        localStorage.removeItem(GAME_SAVE_KEY);
+        return;
+      }
+      restorePersistedGameState(parsed.data);
+    } catch {
+      localStorage.removeItem(GAME_SAVE_KEY);
+    } finally {
+      saveHydratedRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!saveHydratedRef.current) return undefined;
+    const timer = setTimeout(() => {
+      const snapshot = {
+        version: GAME_SAVE_VERSION,
+        savedAt: Date.now(),
+        data: buildPersistedGameState()
+      };
+      try {
+        localStorage.setItem(GAME_SAVE_KEY, JSON.stringify(snapshot));
+      } catch {
+        // Ignore quota/storage errors; gameplay should continue.
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+
+  useEffect(() => {
     if (!chatScrollRef.current) return;
     chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatMode, selectedCastawayId, activeHistory.length, activeHistory[activeHistory.length - 1]?.text]);
+
+  useEffect(() => {
+    const inCamp = phase === 'arrival' || phase === 'convo' || phase === 'debrief';
+    if (!inCamp) {
+      setCastawayApproachesById({});
+      return;
+    }
+    const id = setInterval(() => {
+      maybeQueueCastawayApproach('ambient');
+    }, 12000);
+    return () => clearInterval(id);
+  }, [phase, castaways, chatInFlight, campSearchOpen, castawayApproachesById, approachCountByPhase, campSocialActivityScore, approachDramaBoost, selectedCastawayId, searchSuspicionScore, castawayCurrentlySearching]);
+
+  useEffect(() => {
+    if (approachDramaBoost <= 0) return undefined;
+    const id = setTimeout(() => setApproachDramaBoost((prev) => Math.max(0, prev - 1)), 18000);
+    return () => clearTimeout(id);
+  }, [approachDramaBoost]);
+
+  useEffect(() => {
+    if (!activeNotesCastawayId) return;
+    if (!castaways.some((c) => c.id === activeNotesCastawayId)) {
+      setActiveNotesCastawayId(null);
+    }
+  }, [castaways, activeNotesCastawayId]);
+
+  useEffect(() => {
+    if (!pendingCastawayIdolOffer) return;
+    if (pendingCastawayIdolOffer.castawayId !== selectedCastawayId || chatMode !== 'oneOnOne') {
+      setPendingCastawayIdolOffer(null);
+    }
+  }, [pendingCastawayIdolOffer, selectedCastawayId, chatMode]);
 
   useEffect(() => {
     if (phase !== 'tribal') return;
@@ -604,6 +976,77 @@ ${JSON.stringify(socialObservations.filter((o) => o.round <= currentRound), null
 ${visible.map((o) => `- Round ${o.round}: ${o.text}`).join('\n')}`;
   }
 
+  function logIdolTransfer(event) {
+    const entry = {
+      id: `idol-transfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      round: currentRound,
+      phase,
+      timestamp: Date.now(),
+      ...event
+    };
+    setIdolTransferLog((prev) => [...prev, entry]);
+  }
+
+  function buildIdolTransferContext() {
+    if (!idolTransferLog.length) return 'Idol transfer log: none yet.';
+    return `Idol transfer log:
+${idolTransferLog
+  .map((e) => {
+    const from = e.from || 'unknown';
+    const to = e.to || 'unknown';
+    const visibility = e.visibility || 'private';
+    const type = e.type || 'transfer';
+    const summary = e.summary ? ` (${e.summary})` : '';
+    return `- Round ${e.round} ${e.phase}: ${type} ${from} -> ${to} [${visibility}]${summary}`;
+  })
+  .join('\n')}`;
+  }
+
+  function buildPersistentConversationContext() {
+    const oneOnOne = castaways.map((c) => ({
+      name: c.name,
+      history: (conversationHistories[c.id] || []).map((m) => ({
+        role: m.role,
+        speaker: m.speaker || (m.role === 'user' ? playerName : c.name),
+        text: m.text
+      }))
+    }));
+    const campfire = campfireHistory.map((m) => ({
+      role: m.role,
+      speaker: m.speaker || (m.role === 'user' ? playerName : 'Castaway'),
+      text: m.text
+    }));
+    const tribal = tribalPublicHistory.map((m) => ({
+      role: m.role,
+      speaker: m.speaker || (m.role === 'player' ? playerName : ''),
+      text: m.text
+    }));
+    const archive = roundHistoryArchive.map((r) => ({
+      round: r.round,
+      eliminatedName: r.eliminatedName,
+      campfireHistory: r.campfireHistory || [],
+      tribalHistory: r.tribalHistory || [],
+      conversations: r.conversations || []
+    }));
+    return `Full persistent conversation memory across this entire game:
+- Current round one-on-one histories:
+${JSON.stringify(oneOnOne, null, 2)}
+
+- Current round campfire history:
+${JSON.stringify(campfire, null, 2)}
+
+- Current round tribal history:
+${JSON.stringify(tribal, null, 2)}
+
+- Prior rounds archive (must remain active memory):
+${JSON.stringify(archive, null, 2)}
+
+- Idol transfer timeline:
+${JSON.stringify(idolTransferLog, null, 2)}
+
+Nothing above is forgotten.`;
+  }
+
   function upsertRelationshipIntel(name, status, summary) {
     if (!name) return;
     setRelationshipIntelByName((prev) => {
@@ -619,6 +1062,129 @@ ${visible.map((o) => `- Round ${o.round}: ${o.text}`).join('\n')}`;
         }
       };
     });
+  }
+
+  function getCampPhaseKey() {
+    return `${phase}-r${currentRound}`;
+  }
+
+  function buildApproachLine(castaway, reason = 'ambient') {
+    const personality = String(castaway?.personality || '').toLowerCase();
+    const ignored = Number(approachIgnoredByName[castaway.name] || 0);
+
+    if (personality.includes('paranoid') || personality.includes('suspicious')) {
+      return ignored > 0
+        ? 'I tried to pull you earlier. Need your read now before this gets worse.'
+        : 'Hey... got a second? I need to sanity-check something before people start talking.';
+    }
+    if (personality.includes('loyal') || personality.includes('warm') || personality.includes('dependable')) {
+      return ignored > 0
+        ? 'Still want that talk. I would rather clear the air than guess.'
+        : 'Can we talk for a minute? I want us aligned before this drifts.';
+    }
+    if (personality.includes('strateg') || personality.includes('calculating') || personality.includes('mastermind')) {
+      return ignored > 0
+        ? 'Quick check-in. We left things hanging and that can cost us.'
+        : 'You got a minute? Nothing dramatic, just want to compare notes quietly.';
+    }
+    if (reason === 'debrief') {
+      return ignored > 0
+        ? 'Last night changed the board. I still need a straight read from you.'
+        : 'That vote shifted everything. Walk with me for a minute?';
+    }
+    return ignored > 0
+      ? 'Still hoping to talk. I do not like where this is heading.'
+      : 'Hey, you got a second? Away from everyone else?';
+  }
+
+  function maybeQueueCastawayApproach(trigger = 'ambient') {
+    const inCamp = phase === 'arrival' || phase === 'convo' || phase === 'debrief';
+    if (!inCamp || chatInFlight || campSearchOpen) return;
+    if (Object.keys(castawayApproachesById).length > 0) return;
+    if (!castaways.length) return;
+
+    const phaseKey = getCampPhaseKey();
+    const countThisPhase = Number(approachCountByPhase[phaseKey] || 0);
+    const maxThisPhase = 1 + (phase === 'debrief' || campSocialActivityScore >= 3 || approachDramaBoost > 0 ? 1 : 0);
+    if (countThisPhase >= maxThisPhase) return;
+
+    const candidates = castaways.filter((c) => !castawayCurrentlySearching.includes(c.name));
+    if (!candidates.length) return;
+
+    let best = null;
+    let bestScore = -Infinity;
+    candidates.forEach((c) => {
+      const p = String(c.personality || '').toLowerCase();
+      const ignored = Number(approachIgnoredByName[c.name] || 0);
+      let score = Math.random() * 0.75;
+      if (phase === 'debrief') score += 1.5;
+      if (trigger === 'campfire' || trigger === 'search' || trigger === 'debrief') score += 0.9;
+      if (ignored > 0) score += 0.6;
+      if (selectedCastawayId === c.id) score -= 0.3;
+      if (searchSuspicionScore >= 45 && (p.includes('paranoid') || p.includes('suspicious'))) score += 0.8;
+      if (p.includes('strateg') || p.includes('calculating') || p.includes('mastermind')) score += 0.35;
+      if (p.includes('loyal') || p.includes('warm')) score += 0.15;
+      if (score > bestScore) {
+        best = c;
+        bestScore = score;
+      }
+    });
+
+    if (!best) return;
+    const line = buildApproachLine(best, phase === 'debrief' ? 'debrief' : trigger);
+    const approach = {
+      id: `approach-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      castawayId: best.id,
+      castawayName: best.name,
+      line,
+      createdAt: Date.now()
+    };
+    setCastawayApproachesById({ [best.id]: approach });
+    setApproachCountByPhase((prev) => ({ ...prev, [phaseKey]: countThisPhase + 1 }));
+  }
+
+  function acceptCastawayApproach(castawayId) {
+    const approach = castawayApproachesById[castawayId];
+    if (!approach) return;
+    const castaway = castaways.find((c) => c.id === castawayId);
+    if (!castaway) return;
+    setCastawayApproachesById({});
+    setSelectedCastawayId(castawayId);
+    setChatMode('oneOnOne');
+    setCampSocialActivityScore((prev) => prev + 1);
+    setConversationHistories((prev) => {
+      const list = prev[castawayId] || [];
+      const nextMessage = {
+        id: `approach-msg-${Date.now()}`,
+        role: 'assistant',
+        speaker: castaway.name,
+        text: approach.line,
+        typing: false,
+        initiatedByCastaway: true
+      };
+      return { ...prev, [castawayId]: [...list, nextMessage] };
+    });
+    if (phase === 'arrival') {
+      registerArrivalContact([castaway.name]);
+    } else if (phase === 'debrief') {
+      registerDebriefContact([castaway.name]);
+    }
+  }
+
+  function dismissCastawayApproach(castawayId) {
+    const approach = castawayApproachesById[castawayId];
+    if (!approach) return;
+    setCastawayApproachesById({});
+    setApproachIgnoredByName((prev) => ({
+      ...prev,
+      [approach.castawayName]: Number(prev[approach.castawayName] || 0) + 1
+    }));
+    pushSocialObservation({
+      type: 'castaway_approach_ignored',
+      actors: [approach.castawayName, playerName],
+      text: `${approach.castawayName} tried to pull you aside, but you brushed it off.`
+    });
+    upsertRelationshipIntel(approach.castawayName, 'uncertain', `${approach.castawayName} noticed you ignored a private check-in.`);
   }
 
   function chooseChallengeForRound(roundNumber) {
@@ -663,6 +1229,7 @@ ${visible.map((o) => `- Round ${o.round}: ${o.text}`).join('\n')}`;
 - Real idol currently held by: ${playerHasIdol ? playerName : castawayHasIdolName || 'nobody'}
 - Player holding fake idol: ${playerHasFakeIdol ? 'yes' : 'no'}
 - Fake idol planter: ${fakeIdolPlanted ? fakeIdolPlanterName || 'unknown' : 'none'}
+${buildIdolTransferContext()}
 
 Strategic rules:
 - Never suggest voting for any immune target.
@@ -678,6 +1245,27 @@ ${buildSocialObservationContext()}`;
       clearTimeout(tribalAutoAdvanceTimerRef.current);
       tribalAutoAdvanceTimerRef.current = null;
     }
+  }
+
+  function setCastawayNote(castawayId, note) {
+    if (!castawayId) return;
+    setCastawayNotesById((prev) => ({ ...prev, [castawayId]: note }));
+  }
+
+  function openCastawayNotes(castawayId) {
+    if (!castawayId) return;
+    setActiveNotesCastawayId(castawayId);
+  }
+
+  function closeCastawayNotes() {
+    setActiveNotesCastawayId(null);
+  }
+
+  function resetGame() {
+    const confirmed = window.confirm('Reset the game and clear all saved progress?');
+    if (!confirmed) return;
+    localStorage.removeItem(GAME_SAVE_KEY);
+    window.location.reload();
   }
 
   function rememberHostLine(text) {
@@ -731,9 +1319,14 @@ ${buildSocialObservationContext()}`;
   }
 
   function startImmunityFromArrival() {
+    setCastawayApproachesById({});
     const nextType = roundChallengeTypes[currentRound] || chooseChallengeForRound(currentRound);
     setRoundChallengeTypes((prev) => ({ ...prev, [currentRound]: nextType }));
     setupImmunityChallenge(nextType, castaways);
+  }
+
+  function joinArrivalConversation() {
+    setPhase('arrival');
   }
 
   async function loadCampArrivalOpening(castList = castaways, player = playerName, occupation = playerOccupation) {
@@ -757,7 +1350,7 @@ Rules:
 - jeffOpening must be 3-4 sentences max.
 - Jeff sets atmosphere only: island, first meeting, only one winner.
 - Jeff does not explain rules or strategy.
-- reactions must include 1-2 castaways reacting naturally to first arrival energy.
+- reactions must include 2-3 castaways reacting naturally to first arrival energy.
 - reactions should feel organic and personality-driven, not label-heavy.
 - no markdown.`;
       const prompt = `Player: ${player}
@@ -782,8 +1375,23 @@ Write the arrival opening now.`;
         ? parsed.reactions
             .map((r) => ({ name: String(r?.name || '').trim(), response: String(r?.response || '').trim() }))
             .filter((r) => r.name && r.response && validNames.has(r.name))
-            .slice(0, 2)
+            .slice(0, 3)
         : [];
+      const usedReactionNames = new Set(reactions.map((r) => r.name));
+      const fillerPool = castList.filter((c) => !usedReactionNames.has(c.name));
+      const fillerLines = [
+        'This beach feels electric already.',
+        'Everyone is smiling, but nobody is relaxed.',
+        'First impressions matter out here. I am watching everything.',
+        'You can feel the game start the second people lock eyes.'
+      ];
+      while (reactions.length < 2 && fillerPool.length) {
+        const next = fillerPool.shift();
+        reactions.push({
+          name: next.name,
+          response: fillerLines[reactions.length % fillerLines.length]
+        });
+      }
       const introMessages = [
         {
           id: `arrival-jeff-${Date.now()}`,
@@ -801,7 +1409,6 @@ Write the arrival opening now.`;
         }))
       ];
       setCampArrivalIntroMessages(introMessages);
-      setCampfireHistory((prev) => [...introMessages, ...prev]);
     } catch (err) {
       const fallback = [
         {
@@ -810,10 +1417,23 @@ Write the arrival opening now.`;
           speaker: 'Jeff',
           text: 'New beach, new tribe, first impressions. You are all strangers right now, but only one of you will win this game. The island is watching what you do first.',
           typing: false
+        },
+        {
+          id: `arrival-cast-fallback-${Date.now()}-1`,
+          role: 'assistant',
+          speaker: castList[0]?.name || 'Castaway',
+          text: 'Alright, deep breath. Let us see who is actually built for this.',
+          typing: false
+        },
+        {
+          id: `arrival-cast-fallback-${Date.now()}-2`,
+          role: 'assistant',
+          speaker: castList[1]?.name || castList[0]?.name || 'Castaway',
+          text: 'No hiding now. First impressions start immediately.',
+          typing: false
         }
       ];
       setCampArrivalIntroMessages(fallback);
-      setCampfireHistory((prev) => [...fallback, ...prev]);
       setError(err.message || 'Failed to load camp arrival opening.');
     } finally {
       setCampArrivalLoading(false);
@@ -856,6 +1476,145 @@ Write the arrival opening now.`;
       maybeTriggerArrivalNudge(next);
       return next;
     });
+  }
+
+  function maybeTriggerDebriefNudge(nextContacts) {
+    if (phase !== 'debrief') return;
+    if (debriefNudgeDone) return;
+    if (nextContacts.length < debriefNudgeThreshold) return;
+    const first = castaways.find((c) => !nextContacts.includes(c.name)) || castaways[0];
+    const second = castaways.find((c) => c.name !== first?.name) || null;
+    const nudgeMessages = [
+      {
+        id: `debrief-nudge-${Date.now()}-1`,
+        role: 'assistant',
+        speaker: first?.name || 'Castaway',
+        text: 'Sky is starting to lighten. Challenge is not far off.',
+        typing: false
+      }
+    ];
+    if (second) {
+      nudgeMessages.push({
+        id: `debrief-nudge-${Date.now()}-2`,
+        role: 'assistant',
+        speaker: second.name,
+        text: 'Whatever happened tonight, we carry it into the next challenge.',
+        typing: false
+      });
+    }
+    setDebriefNudgeDone(true);
+    setCampfireHistory((prev) => [...prev, ...nudgeMessages]);
+  }
+
+  function registerDebriefContact(names = []) {
+    if (phase !== 'debrief') return;
+    if (!names.length) return;
+    setDebriefDistinctContacts((prev) => {
+      const next = Array.from(new Set([...prev, ...names]));
+      maybeTriggerDebriefNudge(next);
+      return next;
+    });
+  }
+
+  async function loadPostTribalDebriefOpening(survivors = castaways) {
+    setDebriefLoading(true);
+    try {
+      const survivorContext = survivors.map((c) => ({
+        name: c.name,
+        personality: c.personality,
+        hiddenAgenda: c.hiddenAgenda
+      }));
+      const system = `Write immediate post-tribal camp aftermath in a Survivor-style game.
+
+Return strict JSON only:
+{
+  "atmosphere": "",
+  "reactions": [{ "name": "", "response": "" }]
+}
+
+Rules:
+- atmosphere is 1-2 short dramatic sentences at night camp.
+- reactions must include 1-2 castaways from the provided names.
+- reactions should reflect emotional aftermath: relief, fear, recalculation, guilt, or performative calm.
+- no markdown.`;
+      const prompt = `Eliminated tonight: ${eliminatedName}
+Player name: ${playerName}
+Votes:
+${JSON.stringify(votes, null, 2)}
+
+Tribal transcript:
+${JSON.stringify(tribalPublicHistory.map((m) => ({ role: m.role, speaker: m.speaker, text: m.text })), null, 2)}
+
+Survivors:
+${JSON.stringify(survivorContext, null, 2)}
+${buildPersistentConversationContext()}
+
+Write the debrief opening now.`;
+      const raw = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 900,
+        temperature: 0.9
+      });
+      const parsed = parseClaudeJson(raw);
+      const validNames = new Set(survivors.map((c) => c.name));
+      const reactions = Array.isArray(parsed?.reactions)
+        ? parsed.reactions
+            .map((r) => ({ name: String(r?.name || '').trim(), response: String(r?.response || '').trim() }))
+            .filter((r) => r.name && r.response && validNames.has(r.name))
+            .slice(0, 2)
+        : [];
+      if (reactions.length === 0 && survivors[0]?.name) {
+        reactions.push({
+          name: survivors[0].name,
+          response: 'Nobody is sleeping easy tonight. That vote changed everything.'
+        });
+      }
+      const atmosphere = String(parsed?.atmosphere || '').trim() || 'The fire burns low. One torch is gone, and nobody is pretending tonight meant nothing.';
+      const lines = [
+        {
+          id: `debrief-atmo-${Date.now()}`,
+          role: 'assistant',
+          speaker: 'Camp',
+          text: atmosphere,
+          typing: false
+        },
+        ...reactions.map((r, idx) => ({
+          id: `debrief-react-${Date.now()}-${idx}`,
+          role: 'assistant',
+          speaker: r.name,
+          text: r.response,
+          typing: false
+        }))
+      ];
+      setDebriefIntroMessages(lines);
+      setCampfireHistory((prev) => [...prev, ...lines]);
+      setApproachDramaBoost((prev) => prev + 2);
+    } catch (err) {
+      const fallback = [
+        {
+          id: `debrief-fallback-atmo-${Date.now()}`,
+          role: 'assistant',
+          speaker: 'Camp',
+          text: 'The fire pops in the dark while everyone quietly counts who is left.',
+          typing: false
+        },
+        {
+          id: `debrief-fallback-react-${Date.now()}`,
+          role: 'assistant',
+          speaker: survivors[0]?.name || 'Castaway',
+          text: 'Tonight drew a line. Nobody gets to pretend it did not.',
+          typing: false
+        }
+      ];
+      setDebriefIntroMessages(fallback);
+      setCampfireHistory((prev) => [...prev, ...fallback]);
+      setApproachDramaBoost((prev) => prev + 2);
+      setError(err.message || 'Failed to load post-tribal debrief opening.');
+    } finally {
+      setDebriefLoading(false);
+    }
   }
 
   function startImmunityChallenge() {
@@ -1224,6 +1983,8 @@ Write a unique pep talk now.`;
   async function generateCastaways(e) {
     e.preventDefault();
     setError('');
+    localStorage.removeItem(GAME_SAVE_KEY);
+    setGeneratingCastawaysLabel('Your tribe is hitting the beach...');
 
     const cleanedName = playerNameInput.trim();
     const cleanedOccupation = playerOccupationInput.trim();
@@ -1337,6 +2098,10 @@ Rules:
         acc[c.id] = [];
         return acc;
       }, {});
+      const notes = normalized.reduce((acc, c) => {
+        acc[c.id] = '';
+        return acc;
+      }, {});
       const idolZone = pickRandom(CAMP_ZONES) || CAMP_ZONES[0];
       const clueZone = pickRandom(CAMP_ZONES.filter((z) => z.id !== idolZone.id)) || CAMP_ZONES[1];
       const fakeZone = pickRandom(CAMP_ZONES.filter((z) => z.id !== idolZone.id && z.id !== clueZone.id)) || CAMP_ZONES[2];
@@ -1368,6 +2133,13 @@ Rules:
       setCastawayClueFinderName(plannedClueFinder);
       setCastawayIdolFinderName(plannedIdolFinder);
       setCastawayHasIdolName(plannedIdolFinder);
+      setIdolGiveTarget('');
+      setIdolGivenPublicByPlayer(false);
+      setIdolGivenPublicByCastaway('');
+      setPendingCastawayIdolOffer(null);
+      setIdolPlantPlan(null);
+      setIdolPlantRecipientName('');
+      setIdolTransferLog([]);
       setFakeIdolPlanted(fakePlanted);
       setFakeIdolPlanterName(fakePlanter);
       setIdolRevealMoment('');
@@ -1392,15 +2164,26 @@ Rules:
       setIdolAnnouncement('');
       setIdolOutcome(null);
       setConversationHistories(histories);
+      setCastawayNotesById(notes);
       setCampfireHistory([]);
       setCampArrivalIntroMessages([]);
       setCampArrivalLoading(false);
       setArrivalDistinctContacts([]);
       setArrivalNudgeThreshold(Math.random() < 0.5 ? 3 : 4);
       setArrivalNudgeDone(false);
+      setDebriefIntroMessages([]);
+      setDebriefLoading(false);
+      setDebriefDistinctContacts([]);
+      setDebriefNudgeThreshold(Math.random() < 0.5 ? 3 : 4);
+      setDebriefNudgeDone(false);
       setCampfireInvites([]);
       setCampfireRecentlyInvited([]);
       setCampfireRecentlyUninvited([]);
+      setCastawayApproachesById({});
+      setApproachCountByPhase({});
+      setApproachIgnoredByName({});
+      setCampSocialActivityScore(0);
+      setApproachDramaBoost(0);
       setChatMode('oneOnOne');
       setPhaseTwoOnboardingDismissed(false);
       setTribalHostOpening('');
@@ -1432,13 +2215,15 @@ Rules:
       );
       const round1Challenge = chooseChallengeForRound(1);
       setRoundChallengeTypes({ 1: round1Challenge });
-      setPhase('arrival');
+      setPhase('arrival_intro');
       setChatMode('oneOnOne');
+      setGeneratingCastawaysLabel('Eyes are locking in around camp...');
       loadCampArrivalOpening(normalized, cleanedName, cleanedOccupation);
     } catch (err) {
       setError(err.message || 'Unable to generate castaways.');
     } finally {
       setGeneratingCastaways(false);
+      setGeneratingCastawaysLabel('Your tribe is hitting the beach...');
     }
   }
 
@@ -1452,6 +2237,7 @@ Rules:
     const castawayId = selectedCastaway.id;
     const userText = conversationInput.trim();
     const inArrival = phase === 'arrival';
+    const inDebrief = phase === 'debrief';
     setConversationInput('');
     const userAskedIdol = /\bidol|clue|search|well|palm|fire pit|rocks|camp\b/i.test(userText);
     const oneOnOneKey = `r${currentRound}:${castawayId}`;
@@ -1522,9 +2308,11 @@ Your profile:
 - Other tribe members: ${otherNames.join(', ')}
 - Player name: ${playerName}
 - The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how your character perceives and interacts with them.
+- Player previously ignored your private approach attempts: ${Number(approachIgnoredByName[selectedCastaway.name] || 0)}
 - Immunity status tonight: ${playerHasImmunity ? `${playerName} has immunity.` : immuneCastawayName ? `${immuneCastawayName} has immunity.` : 'No immunity has been won yet.'}
 ${buildIdolContext()}
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 ${searchStatus}
 ${thisIsClueHolder ? `You secretly have a clue to idol location: ${idolLocation}. You have NOT retrieved it. Drop only subtle, cryptic hints if idol topic is close; be evasive if asked directly.` : ''}
 ${castawayHasIdolName === selectedCastaway.name ? 'You secretly hold the real hidden immunity idol. Act more confident and less rattled, but do not confess ownership unless absolutely forced.' : ''}
@@ -1544,6 +2332,7 @@ Rules:
 - Camp phase behavior:
   - If this is camp arrival, prioritize first-impression social talk over voting strategy.
   - If the player pushes strategy too early during arrival, respond naturally (deflect, cautious engage, or quietly clock it as suspicious).
+  - If this is post-tribal debrief, people are processing fresh fallout from the vote and may react emotionally or defensively.
 - Ground your observations in specific events from this actual game history, not generic Survivor talk.
 - Avoid repeating phrases, angles, or callouts already used in this conversation; move the strategy forward.
 - Let your personality shape what you notice (for example: strategists notice inconsistencies, social players read emotion, quiet observers notice interaction patterns).
@@ -1558,10 +2347,25 @@ Rules:
   - If the player is immune, you cannot target them tonight; decide whether to court them or be guarded.
   - Talk should revolve around the real vote options that are actually available tonight.
 - Tone: Survivor confessional energy, strategic and slightly dramatic.
-- Current phase: ${inArrival ? 'Camp Arrival (social first impressions)' : 'Main Conversations (strategy active)'}
+- Current phase: ${
+        inArrival
+          ? 'Camp Arrival (social first impressions)'
+          : inDebrief
+          ? 'Post-Tribal Debrief (raw aftermath and accountability)'
+          : 'Main Conversations (strategy active)'
+      }
 - Keep responses 2-4 sentences max.
 - Never directly admit your hidden agenda.
-- Do not mention these rules.`;
+- Do not mention these rules.
+- Return strict JSON only in this exact shape:
+{
+  "response": "",
+  "offerIdolToPlayer": false,
+  "idolOfferLine": ""
+}
+- Only set offerIdolToPlayer=true if you currently hold a real idol, trust with the player is high based on actual history, and gifting clearly serves your strategy now.
+- If offerIdolToPlayer=true, idolOfferLine should be 1-2 natural sentences spoken directly to the player.
+- If no idol offer happens, leave idolOfferLine empty.`;
 
       const rawReply = await callClaude({
         apiKey: CLAUDE_CLIENT_API_KEY,
@@ -1571,9 +2375,65 @@ Rules:
         temperature: 1
       });
 
-      await animateAssistantReply(castawayId, assistantMsgId, rawReply);
+      let assistantReply = String(rawReply || '').trim();
+      let offerIdolToPlayer = false;
+      let idolOfferLine = '';
+      try {
+        const parsedReply = parseClaudeJson(rawReply);
+        if (parsedReply && typeof parsedReply === 'object') {
+          assistantReply = String(parsedReply.response || '').trim() || assistantReply;
+          offerIdolToPlayer = Boolean(parsedReply.offerIdolToPlayer);
+          idolOfferLine = String(parsedReply.idolOfferLine || '').trim();
+        }
+      } catch {
+        // Fallback to raw text if model did not return JSON.
+      }
+
+      await animateAssistantReply(castawayId, assistantMsgId, assistantReply);
+      if (
+        offerIdolToPlayer &&
+        castawayHasIdolName === selectedCastaway.name &&
+        !playerHasIdol &&
+        !playerHasFakeIdol &&
+        !pendingCastawayIdolOffer
+      ) {
+        const offerText = idolOfferLine || `${selectedCastaway.name} lowers their voice. "I trust you more than anyone right now. Take this idol."`;
+        const offerMessageId = `idol-offer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        setConversationHistories((prev) => {
+          const list = prev[castawayId] || [];
+          return {
+            ...prev,
+            [castawayId]: [
+              ...list,
+              {
+                id: offerMessageId,
+                role: 'assistant',
+                speaker: selectedCastaway.name,
+                text: offerText,
+                typing: false
+              }
+            ]
+          };
+        });
+        setPendingCastawayIdolOffer({
+          castawayId,
+          castawayName: selectedCastaway.name,
+          line: offerText
+        });
+        logIdolTransfer({
+          type: 'castaway_offer_to_player',
+          from: selectedCastaway.name,
+          to: playerName,
+          visibility: 'private',
+          accepted: null,
+          summary: `${selectedCastaway.name} privately offered their idol to ${playerName}.`
+        });
+      }
+      setCampSocialActivityScore((prev) => prev + 1);
       if (inArrival) {
         registerArrivalContact([selectedCastaway.name]);
+      } else if (inDebrief) {
+        registerDebriefContact([selectedCastaway.name]);
       }
       if (thisIsClueHolder && userAskedIdol) {
         setPlayerHeardIdolClue(true);
@@ -1585,6 +2445,193 @@ Rules:
       setChatInFlight(false);
       rollCastawaySearchActivity();
     }
+  }
+
+  async function offerIdolToCastawayPrivately() {
+    if (chatInFlight || !selectedCastaway || chatMode !== 'oneOnOne') return;
+    if (phase !== 'convo') return;
+    if (!playerHasIdol || castawayHasIdolName) return;
+    setError('');
+    setChatInFlight(true);
+    const castawayId = selectedCastaway.id;
+    const castawayName = selectedCastaway.name;
+    const offerText = `I want you to have my idol tonight. I am handing it to you.`;
+    const userMsg = {
+      id: `idol-offer-user-${Date.now()}`,
+      role: 'user',
+      text: offerText,
+      typing: false
+    };
+    const assistantMsgId = `idol-offer-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const placeholderAssistantMsg = {
+      id: assistantMsgId,
+      role: 'assistant',
+      speaker: castawayName,
+      text: '',
+      typing: true
+    };
+    const existingHistory = conversationHistories[castawayId] || [];
+    const nextHistory = [...existingHistory, userMsg, placeholderAssistantMsg];
+    setConversationHistories((prev) => ({
+      ...prev,
+      [castawayId]: nextHistory
+    }));
+
+    try {
+      const historyForModel = nextHistory
+        .filter((m) => m.id !== assistantMsgId)
+        .map((m) => ({ role: m.role, content: m.text }));
+      const system = `You are ${castawayName}. The player has privately offered you their hidden immunity idol.
+
+Decide in character whether to accept. Your choice must be grounded in your personality, your hidden agenda, and your relationship history with the player.
+
+Return strict JSON only:
+{
+  "response": "",
+  "accepts": true,
+  "leaksOffer": false,
+  "leakSummary": ""
+}
+
+Rules:
+- response is 1-3 natural sentences to the player.
+- accepts can be true or false.
+- leaksOffer only applies when accepts=false.
+- If leaksOffer=true, leakSummary is one sentence about how the offer gets out.
+- If leaksOffer=false, leakSummary should be empty.
+- No markdown.
+${buildIdolContext()}
+${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}`;
+
+      const rawReply = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: historyForModel,
+        maxTokens: 900,
+        temperature: 0.95
+      });
+      const parsed = parseClaudeJson(rawReply) || {};
+      const response = String(parsed.response || '').trim() || `${castawayName} studies you carefully and does not answer right away.`;
+      const accepts = Boolean(parsed.accepts);
+      const leaksOffer = accepts ? false : Boolean(parsed.leaksOffer);
+      const leakSummary = leaksOffer ? String(parsed.leakSummary || '').trim() : '';
+
+      await animateAssistantReply(castawayId, assistantMsgId, response);
+
+      if (accepts) {
+        setPlayerHasIdol(false);
+        setCastawayHasIdolName(castawayName);
+        setIdolRevealMoment(`${castawayName} accepted your private idol offer. You are now vulnerable.`);
+        logIdolTransfer({
+          type: 'private_gift_player_to_castaway',
+          from: playerName,
+          to: castawayName,
+          visibility: 'private',
+          accepted: true,
+          summary: `${playerName} privately gave a real idol to ${castawayName}.`
+        });
+        upsertRelationshipIntel(castawayName, 'ally', `${castawayName} accepted your private idol handoff.`);
+      } else {
+        setIdolRevealMoment(`${castawayName} declined your idol offer.`);
+        logIdolTransfer({
+          type: 'private_gift_player_to_castaway',
+          from: playerName,
+          to: castawayName,
+          visibility: 'private',
+          accepted: false,
+          summary: `${castawayName} declined a private idol offer from ${playerName}.`
+        });
+        if (leaksOffer) {
+          const rumor = leakSummary || `${castawayName} quietly let others know you tried to hand them an idol.`;
+          pushSocialObservation({
+            type: 'idol_offer_leaked',
+            actors: [castawayName, playerName],
+            text: rumor
+          });
+          setIdolRevealMoment(rumor);
+          logIdolTransfer({
+            type: 'private_offer_leaked',
+            from: castawayName,
+            to: 'camp',
+            visibility: 'public',
+            accepted: false,
+            summary: rumor
+          });
+          upsertRelationshipIntel(castawayName, 'threat', `${castawayName} leaked your idol offer.`);
+        }
+      }
+    } catch (err) {
+      setHistoryMessage(castawayId, assistantMsgId, `I need a second... (${err.message || 'request failed'})`, true);
+      setError(err.message || 'Idol offer failed.');
+    } finally {
+      setChatInFlight(false);
+    }
+  }
+
+  function acceptCastawayIdolOffer() {
+    const pending = pendingCastawayIdolOffer;
+    if (!pending) return;
+    if (castawayHasIdolName !== pending.castawayName) {
+      setPendingCastawayIdolOffer(null);
+      return;
+    }
+    setPlayerHasIdol(true);
+    setCastawayHasIdolName('');
+    setPendingCastawayIdolOffer(null);
+    setIdolRevealMoment(`${pending.castawayName} quietly passed you their idol. You now hold the idol.`);
+    logIdolTransfer({
+      type: 'private_gift_castaway_to_player',
+      from: pending.castawayName,
+      to: playerName,
+      visibility: 'private',
+      accepted: true,
+      summary: `${pending.castawayName} privately gave their idol to ${playerName}.`
+    });
+    setConversationHistories((prev) => {
+      const list = prev[pending.castawayId] || [];
+      return {
+        ...prev,
+        [pending.castawayId]: [
+          ...list,
+          {
+            id: `idol-offer-accept-${Date.now()}`,
+            role: 'user',
+            text: 'I accept. Thank you.',
+            typing: false
+          }
+        ]
+      };
+    });
+  }
+
+  function declineCastawayIdolOffer() {
+    const pending = pendingCastawayIdolOffer;
+    if (!pending) return;
+    setPendingCastawayIdolOffer(null);
+    logIdolTransfer({
+      type: 'private_gift_castaway_to_player',
+      from: pending.castawayName,
+      to: playerName,
+      visibility: 'private',
+      accepted: false,
+      summary: `${playerName} declined a private idol offer from ${pending.castawayName}.`
+    });
+    setConversationHistories((prev) => {
+      const list = prev[pending.castawayId] || [];
+      return {
+        ...prev,
+        [pending.castawayId]: [
+          ...list,
+          {
+            id: `idol-offer-decline-${Date.now()}`,
+            role: 'user',
+            text: 'I cannot take it. Keep it.',
+            typing: false
+          }
+        ]
+      };
+    });
   }
 
   async function sendCampfireConversation() {
@@ -1654,6 +2701,7 @@ Rules:
         reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
+        ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0),
         hasClue: c.id === idolClueHolderId,
         hasRealIdol: castawayHasIdolName === c.name,
         plantedFakeIdol: fakeIdolPlanted && fakeIdolPlanterName === c.name,
@@ -1678,6 +2726,7 @@ Tone and behavior rules:
 - Camp phase behavior:
   - If this is camp arrival, keep the tone social and first-impression focused.
   - Strategy should feel premature during arrival; if pushed too early, castaways can deflect, laugh it off, cautiously engage, or flag it as suspicious.
+  - If this is post-tribal debrief, tone is raw and immediate; castaways should reference tribal fallout and recalculate alliances.
 - The player's name is ${playerName} and they are a ${playerOccupation}. Factor this into how castaways perceive and interact with them.
 - Every observation must be grounded in specific moments from this game history (campfire and 1-on-1), not generic suspicion lines.
 - Do not repeat the same phrase, accusation pattern, or behavioral read once it has already been used; advance the conversation.
@@ -1685,6 +2734,7 @@ Tone and behavior rules:
 - Immunity status tonight: ${playerHasImmunity ? `${playerName} has immunity.` : immuneCastawayName ? `${immuneCastawayName} has immunity.` : 'No immunity has been won yet.'}
 ${buildIdolContext()}
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 - Immunity must drive strategy in this conversation:
   - Immunity only prevents votes against that person tonight.
   - The immune person still votes, can influence decisions, and can be courted as a key vote.
@@ -1703,7 +2753,13 @@ ${
     : 'Chosen group: only invited castaways respond. You have been deliberately brought into this conversation together. You may or may not trust each other. Act accordingly.'
 }
 
-- Current phase: ${inArrival ? 'Camp Arrival (social first impressions)' : 'Main Conversations (strategy active)'}
+- Current phase: ${
+        inArrival
+          ? 'Camp Arrival (social first impressions)'
+          : inDebrief
+          ? 'Post-Tribal Debrief (raw aftermath and accountability)'
+          : 'Main Conversations (strategy active)'
+      }
 
 Mid-conversation membership behavior:
 - Invites can change during the conversation.
@@ -1777,6 +2833,8 @@ Rules:
       }
       if (inArrival) {
         registerArrivalContact(normalized.map((r) => r.name));
+      } else if (inDebrief) {
+        registerDebriefContact(normalized.map((r) => r.name));
       }
 
       setCampfireHistory((prev) => prev.filter((m) => m.id !== waitingId));
@@ -1799,6 +2857,8 @@ Rules:
           await new Promise((resolve) => setTimeout(resolve, 550));
         }
       }
+      setCampSocialActivityScore((prev) => prev + 1);
+      if (!inArrival) setApproachDramaBoost((prev) => prev + 1);
       setCampfireRecentlyInvited([]);
       setCampfireRecentlyUninvited([]);
     } catch (err) {
@@ -1841,6 +2901,56 @@ Rules:
       });
     }
     setCastawayCurrentlySearching(active);
+    if (idolPlantPlan?.recipientName && active.includes(idolPlantPlan.recipientName) && !castawayHasIdolName) {
+      const recipientName = idolPlantPlan.recipientName;
+      setCastawayHasIdolName(recipientName);
+      setIdolPlantPlan(null);
+      if (idolPlantPlan.plantedByType === 'player') {
+        logIdolTransfer({
+          type: 'planted_idol_found',
+          from: 'camp',
+          to: recipientName,
+          visibility: 'hidden',
+          accepted: true,
+          summary: `${recipientName} found an idol that was planted for them and believes it was self-found.`
+        });
+      } else {
+        logIdolTransfer({
+          type: 'castaway_planted_idol_found',
+          from: 'camp',
+          to: recipientName,
+          visibility: 'hidden',
+          accepted: true,
+          summary: `${recipientName} found an idol that another castaway planted for them.`
+        });
+      }
+    }
+    if (!idolPlantPlan && castawayHasIdolName && Math.random() < 0.1) {
+      const holder = castaways.find((c) => c.name === castawayHasIdolName);
+      const allies = castaways
+        .filter((c) => c.name !== castawayHasIdolName && (holder?.secretAlliances || []).includes(c.name))
+        .map((c) => c.name);
+      const recipientName = allies[Math.floor(Math.random() * allies.length)];
+      if (recipientName) {
+        const zone = CAMP_ZONES[Math.floor(Math.random() * CAMP_ZONES.length)];
+        setCastawayHasIdolName('');
+        setIdolPlantPlan({
+          zoneId: zone.id,
+          recipientName,
+          plantedByName: castawayHasIdolName,
+          plantedByType: 'castaway',
+          round: currentRound
+        });
+        logIdolTransfer({
+          type: 'castaway_planted_idol',
+          from: castawayHasIdolName,
+          to: recipientName,
+          visibility: 'hidden',
+          accepted: true,
+          summary: `${castawayHasIdolName} secretly planted an idol for ${recipientName}.`
+        });
+      }
+    }
   }
 
   function finishCampSearch(foundSomething, revealText) {
@@ -1853,14 +2963,27 @@ Rules:
     setCampSearchLog([]);
     if (revealText) {
       setIdolRevealMoment(revealText);
+      setApproachDramaBoost((prev) => prev + 2);
+      maybeQueueCastawayApproach('search');
     } else if (!foundSomething) {
       setIdolRevealMoment('You searched hard but came back empty-handed. People may notice you were gone.');
+      setApproachDramaBoost((prev) => prev + 1);
     }
   }
 
   function searchCamp() {
     if (phase !== 'convo') return;
-    if (playerHasIdol || campSearchOpen) return;
+    if (campSearchOpen) return;
+    if (playerHasIdol) {
+      setCampSearchTurnsLeft(0);
+      setCampSearchEnergy(0);
+      setCampSearchSuspicion(0);
+      setCampSearchZoneId('');
+      setCampSearchLog(['Choose a zone and a castaway. Leave your idol quietly and walk away before anyone clocks it.']);
+      setCampSearchOpen(true);
+      setIdolPlantRecipientName(castaways[0]?.name || '');
+      return;
+    }
     const nextSearchCount = searchCount + 1;
     const watchers = pickRandomMany(castaways, 1 + Math.floor(Math.random() * 2)).map((c) => c.name);
     setSearchCount(nextSearchCount);
@@ -1880,6 +3003,36 @@ Rules:
     setCampSearchZoneId('');
     setCampSearchLog(['Pick a zone, then run a quick or thorough search. Thorough search unlocks after you build strong evidence.']);
     setCampSearchOpen(true);
+  }
+
+  function leaveIdolAtCampZone() {
+    if (!campSearchOpen || !playerHasIdol) return;
+    if (!campSearchZoneId || !idolPlantRecipientName) return;
+    const recipientName = idolPlantRecipientName;
+    const zone = zoneById(campSearchZoneId);
+    setPlayerHasIdol(false);
+    setIdolPlantPlan({
+      zoneId: campSearchZoneId,
+      recipientName,
+      plantedByName: playerName,
+      plantedByType: 'player',
+      round: currentRound
+    });
+    setCampSearchOpen(false);
+    setCampSearchTurnsLeft(0);
+    setCampSearchEnergy(0);
+    setCampSearchSuspicion(0);
+    setCampSearchZoneId('');
+    setCampSearchLog([]);
+    setIdolRevealMoment(`You left your idol at ${zone.label} where ${recipientName} is likely to search. If they find it, they will think it was theirs.`);
+    logIdolTransfer({
+      type: 'player_planted_idol',
+      from: playerName,
+      to: recipientName,
+      visibility: 'hidden',
+      accepted: true,
+      summary: `${playerName} planted an idol for ${recipientName} at ${zone.label}.`
+    });
   }
 
   function selectCampSearchZone(zoneId) {
@@ -2020,6 +3173,7 @@ Rules:
         reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
+        ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0),
         hasClue: c.id === idolClueHolderId,
         hasRealIdol: castawayHasIdolName === c.name,
         plantedFakeIdol: fakeIdolPlanted && fakeIdolPlanterName === c.name,
@@ -2090,6 +3244,7 @@ Output constraints:
 - Return strict JSON only, no markdown.
 ${buildIdolContext()}
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 - Host lines already used this session must never be repeated or closely paraphrased.
 
 Format:
@@ -2181,6 +3336,7 @@ Write the tribal opening beat and immediate reactions.`;
         reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
+        ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0),
         hasClue: c.id === idolClueHolderId,
         hasRealIdol: castawayHasIdolName === c.name,
         plantedFakeIdol: fakeIdolPlanted && fakeIdolPlanterName === c.name,
@@ -2265,6 +3421,7 @@ Conversation rules:
 - Return strict JSON only, no markdown.
 ${buildIdolContext()}
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 - Host lines already used in this tribal session must never be repeated or closely paraphrased.
 
 Output format:
@@ -2460,6 +3617,11 @@ Decision rules:
     return () => clearTribalAutoAdvanceTimer();
   }, [phase, tribalVoteCalled, tribalStarted, tribalHostLoading, chatInFlight, tribalAwaitingPlayer, tribalPublicHistory, tribalPlayerMessages]);
 
+  useEffect(() => {
+    if (phase !== 'tribal' || !tribalVoteCalled || tribalStarted) return;
+    maybeCastawayGiftIdolAtTribal();
+  }, [phase, tribalVoteCalled, tribalStarted]);
+
   function playPlayerIdol() {
     if (tribalStarted) return;
     if (!playerHasIdol && !playerHasFakeIdol) return;
@@ -2471,6 +3633,117 @@ Decision rules:
       setIdolAnnouncement('The player plays an idol... but it is fake. The votes stand.');
     } else {
       setIdolAnnouncement(`The player plays a hidden immunity idol for ${target}. Votes against ${target} will not count tonight.`);
+    }
+  }
+
+  function givePlayerIdolAtTribal() {
+    if (tribalStarted || idolPlayedByPlayer) return;
+    if (!playerHasIdol || playerHasFakeIdol) return;
+    const target = idolGiveTarget || castaways[0]?.name;
+    if (!target) return;
+    setPlayerHasIdol(false);
+    setCastawayHasIdolName('');
+    setIdolPlayedByPlayer(true);
+    setIdolPlayedFakeByPlayer(false);
+    setIdolProtectedName(target);
+    setIdolGivenPublicByPlayer(true);
+    setIdolAnnouncement(`${playerName} hands their immunity idol to ${target}. ${target} is now protected from tonight's vote.`);
+    setTribalPublicHistory((prev) => [
+      ...prev,
+      {
+        id: `tribal-public-gift-${Date.now()}`,
+        role: 'host',
+        speaker: 'Host',
+        text: `${playerName} just made it public. Idol transferred to ${target}, and ${target} is safe tonight.`,
+        typing: false
+      }
+    ]);
+    pushSocialObservation({
+      type: 'tribal_public_idol_gift',
+      actors: [playerName, target],
+      text: `${playerName} publicly handed an idol to ${target} at tribal, exposing that bond to everyone.`
+    });
+    logIdolTransfer({
+      type: 'tribal_public_gift_player_to_castaway',
+      from: playerName,
+      to: target,
+      visibility: 'public',
+      accepted: true,
+      summary: `${playerName} publicly gifted their idol to ${target} at tribal.`
+    });
+  }
+
+  async function maybeCastawayGiftIdolAtTribal() {
+    if (!tribalVoteCalled || tribalStarted || idolPlayedByPlayer) return;
+    if (!castawayHasIdolName) return;
+    if (castawayHasIdolName === eliminatedName) return;
+    const holder = castaways.find((c) => c.name === castawayHasIdolName);
+    if (!holder) return;
+    try {
+      const history = conversationHistories[holder.id] || [];
+      const system = `Decide if ${holder.name} publicly gives their idol to ${playerName} at tribal council before votes.
+Return strict JSON only:
+{
+  "giveIdol": false,
+  "line": ""
+}
+Rules:
+- giveIdol should be true only if trust/strategy from actual game history strongly supports protecting the player right now.
+- line is what ${holder.name} says publicly if they give it (1 sentence).
+- if giveIdol=false, line should be empty.
+${buildIdolContext()}
+${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}`;
+      const prompt = `Holder profile:
+${JSON.stringify(holder, null, 2)}
+One-on-one history with player:
+${JSON.stringify(history, null, 2)}
+Current tribal history:
+${JSON.stringify(tribalPublicHistory, null, 2)}
+Social intel:
+${JSON.stringify(relationshipIntelByName[holder.name] || {}, null, 2)}`;
+      const raw = await callClaude({
+        apiKey: CLAUDE_CLIENT_API_KEY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 500,
+        temperature: 0.85
+      });
+      const parsed = parseClaudeJson(raw) || {};
+      if (!parsed.giveIdol) return;
+      const line =
+        String(parsed.line || '').trim() ||
+        `${holder.name} steps forward. "I'm not letting ${playerName} go tonight. This is for them."`;
+      setCastawayHasIdolName('');
+      setIdolPlayedByPlayer(true);
+      setIdolProtectedName(playerName);
+      setIdolGivenPublicByCastaway(holder.name);
+      setIdolAnnouncement(`${holder.name} hands their immunity idol to ${playerName}. ${playerName} is now protected from tonight's vote.`);
+      setTribalPublicHistory((prev) => [
+        ...prev,
+        {
+          id: `tribal-castaway-gift-${Date.now()}`,
+          role: 'castaway',
+          speaker: holder.name,
+          text: line,
+          typing: false
+        }
+      ]);
+      pushSocialObservation({
+        type: 'tribal_public_idol_gift',
+        actors: [holder.name, playerName],
+        text: `${holder.name} publicly handed an idol to ${playerName} at tribal.`
+      });
+      logIdolTransfer({
+        type: 'tribal_public_gift_castaway_to_player',
+        from: holder.name,
+        to: playerName,
+        visibility: 'public',
+        accepted: true,
+        summary: `${holder.name} publicly gifted their idol to ${playerName} at tribal.`
+      });
+    } catch {
+      // No-op: this is optional drama, tribal should continue.
     }
   }
 
@@ -2521,6 +3794,7 @@ Decision rules:
         reality: c.reality || '',
         hiddenAgenda: c.hiddenAgenda,
         secretAlliances: c.secretAlliances,
+        ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0),
         hasIdol: castawayHasIdolName === c.name,
         canVoteForPlayer: !playerHasImmunity,
         conversationWithPlayer: (conversationHistories[c.id] || []).map((m) => ({
@@ -2578,6 +3852,7 @@ Immunity rule:
 - Never produce a vote for an immune person.
 
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 Return strict JSON only. No markdown.`;
       const totalPotentialVotesTonight = castaways.length + (playerHasImmunity ? 0 : 1);
       const majorityVotesNeeded = Math.floor(totalPotentialVotesTonight / 2) + 1;
@@ -2596,6 +3871,7 @@ Majority threshold tonight: ${majorityVotesNeeded}
 Castaway data:
 ${JSON.stringify(castawayData, null, 2)}
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 
 Task:
 Simulate how the ${votingCastawayCount} castaways voted at tribal council based on hidden agendas, alliances, and player conversations.
@@ -2723,7 +3999,10 @@ Rules:
             playerPlayedIdol: idolPlayedByPlayer,
             playerPlayedFakeIdol: idolPlayedFakeByPlayer,
             idolPlayedByCastaway: castawayIdolPlayName,
-            idolProtectedName: playerIdolProtectedName || ''
+            idolProtectedName: playerIdolProtectedName || '',
+            idolGivenPublicByPlayer,
+            idolGivenPublicByCastaway,
+            idolTransfers: idolTransferLog
           });
           setEliminatedName(eliminated);
         }
@@ -2750,6 +4029,7 @@ Rules:
             name: c.name,
             hiddenAgenda: c.hiddenAgenda,
             secretAlliances: c.secretAlliances,
+            ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0),
             personality: c.personality,
             occupation: c.occupation
           })),
@@ -2773,7 +4053,8 @@ Rules:
             fakeIdolPlanted,
             fakeIdolPlanterName,
             idolAnnouncement,
-            idolOutcome
+            idolOutcome,
+            idolTransferLog
           },
           conversations: castaways.map((c) => ({
             name: c.name,
@@ -2801,6 +4082,7 @@ The reveal must feel like director's commentary on the player's exact game, not 
 - The verdict must be personal and specific, tied to exact moments in this session.
 
 ${buildPriorRoundsContext()}
+${buildPersistentConversationContext()}
 Return strict JSON only, no markdown.`;
         const prompt = `Generate a post-tribal truth reveal from this game state:
 ${JSON.stringify(payload, null, 2)}
@@ -2822,7 +4104,7 @@ Rules:
 - alliancesExposed should list concise alliance truths.
 - flippedCallouts should include only castaways who flipped against what they told the player.
 - For each flipped callout, explicitly state what they told the player, what they actually did, and why.
-- idolStory must explain full idol arc: who had clue, who found real/fake idol, who played or held it, and how it changed or did not change outcome.
+- idolStory must explain full idol arc: who had clue, who found real/fake idol, every idol transfer/gift/decline/planting event, who played or held it, and how it changed or did not change outcome.
 - Include all explicit player-castaway voting deals in alliancesExposed or flippedCallouts (honored or betrayed) with concrete reasons.
 - If player had an idol and did not play it and got eliminated, call it out directly in verdict.
 - verdict should directly say whether the player made the right move and why, mention whether the player's occupation helped or hurt socially, and cite at least one decisive quote/moment from this game.
@@ -2916,7 +4198,8 @@ Rules:
           name: c.name,
           personality: c.personality,
           hiddenAgenda: c.hiddenAgenda,
-          secretAlliances: c.secretAlliances
+          secretAlliances: c.secretAlliances,
+          ignoredByPlayerCount: Number(approachIgnoredByName[c.name] || 0)
         })),
         votes,
         conversations: castaways.map((c) => ({
@@ -2929,7 +4212,8 @@ Rules:
           text: m.text
         })),
         tribalHistory: tribalPublicHistory.map((m) => ({ role: m.role, speaker: m.speaker, text: m.text })),
-        revealData
+        revealData,
+        idolTransferLog
       };
 
       const system = `You are creating a between-round social map for a Survivor-style strategy game.
@@ -2945,6 +4229,7 @@ Use specific labels like "voted together", "made a deal", "publicly clashed", "s
 
       const prompt = `Use this state:
 ${JSON.stringify(payload, null, 2)}
+${buildPersistentConversationContext()}
 
 Return ONLY:
 {
@@ -3003,12 +4288,19 @@ Rules:
     }
   }
 
-  function beginRound2() {
+  function prepareRound2StateForDebrief() {
     if (currentRound !== 1) return;
     const survivors = castaways.filter((c) => c.name !== eliminatedName);
     const survivorIds = new Set(survivors.map((c) => c.id));
     const nextHistories = Object.fromEntries(Object.entries(conversationHistories).filter(([id]) => survivorIds.has(id)));
     setCastaways(survivors);
+    if (castawayHasIdolName && castawayHasIdolName === eliminatedName) {
+      setCastawayHasIdolName('');
+    }
+    if (idolPlantPlan?.recipientName === eliminatedName) {
+      setIdolPlantPlan(null);
+    }
+    setPendingCastawayIdolOffer(null);
     setConversationHistories(nextHistories);
     setCampfireInvites((prev) => prev.filter((id) => survivorIds.has(id)));
     setCampfireRecentlyInvited([]);
@@ -3019,8 +4311,29 @@ Rules:
     setImmuneCastawayName('');
     const round2Challenge = chooseChallengeForRound(2);
     setRoundChallengeTypes((prev) => ({ ...prev, 2: round2Challenge }));
-    setupImmunityChallenge(round2Challenge, survivors);
     setPhaseTwoOnboardingDismissed(false);
+    setDebriefIntroMessages([]);
+    setDebriefDistinctContacts([]);
+    setDebriefNudgeThreshold(Math.random() < 0.5 ? 3 : 4);
+    setDebriefNudgeDone(false);
+    loadPostTribalDebriefOpening(survivors);
+  }
+
+  function startNextImmunityChallengeFromDebrief() {
+    if (phase !== 'debrief') return;
+    setCastawayApproachesById({});
+    const nextType = roundChallengeTypes[2] || chooseChallengeForRound(2);
+    setRoundChallengeTypes((prev) => ({ ...prev, 2: nextType }));
+    setupImmunityChallenge(nextType, castaways);
+    setPhaseTwoOnboardingDismissed(false);
+  }
+
+  function beginRound2() {
+    if (currentRound !== 1) return;
+    prepareRound2StateForDebrief();
+    const nextType = roundChallengeTypes[2] || chooseChallengeForRound(2);
+    setRoundChallengeTypes((prev) => ({ ...prev, 2: nextType }));
+    setupImmunityChallenge(nextType, castaways.filter((c) => c.name !== eliminatedName));
   }
 
   async function buildFinalGameSummary(nextRoundRecap) {
@@ -3036,7 +4349,8 @@ Rules:
           votes,
           tribalHistory: tribalPublicHistory,
           campfireHistory,
-          socialObservations: socialObservations.filter((o) => o.round === currentRound)
+          socialObservations: socialObservations.filter((o) => o.round === currentRound),
+          idolTransferLog
         }]
       };
       const system = `You write a final two-round Survivor-style season summary.
@@ -3048,6 +4362,7 @@ Include:
 - a precise final verdict on the player's overall performance across both rounds.`;
       const prompt = `Use this state:
 ${JSON.stringify(payload, null, 2)}
+${buildPersistentConversationContext()}
 
 Write the final summary now.`;
       const text = await callClaude({
@@ -3083,6 +4398,8 @@ Write the final summary now.`;
   }
 
   async function handleRevealContinue() {
+    if (revealContinueLoading) return;
+    setRevealContinueLoading(true);
     const recapEntry = {
       round: currentRound,
       eliminatedName,
@@ -3103,32 +4420,46 @@ Write the final summary now.`;
         name: c.name,
         history: conversationHistories[c.id] || []
       })),
-      socialObservations: socialObservations.filter((o) => o.round === currentRound)
+      socialObservations: socialObservations.filter((o) => o.round === currentRound),
+      idolTransferLog
     };
     setRoundHistoryArchive((prev) => [...prev.filter((r) => r.round !== currentRound), archiveEntry].sort((a, b) => a.round - b.round));
 
     if (currentRound < TOTAL_ROUNDS) {
-      await buildBetweenRoundBrief();
-      setPhase('between_rounds');
-      return;
+      try {
+        prepareRound2StateForDebrief();
+        setPhase('debrief');
+        return;
+      } finally {
+        setRevealContinueLoading(false);
+      }
     }
 
-    await buildFinalGameSummary(nextRecap);
-    setPhase('game_end');
+    try {
+      await buildFinalGameSummary(nextRecap);
+      setPhase('game_end');
+    } finally {
+      setRevealContinueLoading(false);
+    }
   }
 
   function openTribalPhase() {
     setPhase('tribal');
     setCampSearchOpen(false);
+    setCastawayApproachesById({});
+    setPendingCastawayIdolOffer(null);
     clearTribalAutoAdvanceTimer();
     const initialTarget = castaways.map((c) => c.name).find((name) => name !== immuneCastawayName) || (playerHasImmunity ? '' : playerName);
     setTribalSelection(initialTarget || '');
     setTribalVoteConfirming(false);
     setTribalHostLinesUsed([]);
     setIdolPlayTarget(playerName);
+    setIdolGiveTarget(castaways[0]?.name || '');
     setIdolPlayedByPlayer(false);
     setIdolPlayedFakeByPlayer(false);
     setIdolPlayedByCastaway('');
+    setIdolGivenPublicByPlayer(false);
+    setIdolGivenPublicByCastaway('');
     setIdolProtectedName('');
     setIdolAnnouncement('');
     setIdolOutcome(null);
@@ -3191,7 +4522,7 @@ Write the final summary now.`;
     <div className="relative min-h-full overflow-x-hidden text-zinc-100">
       <div className="absolute inset-0 torch-overlay pointer-events-none" />
       <div className="relative mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-6 lg:px-8">
-        <Header phase={phase} playerName={playerName} playerOccupation={playerOccupation} />
+        {phase !== 'arrival_intro' && <Header phase={phase} playerName={playerName} playerOccupation={playerOccupation} onResetGame={resetGame} />}
 
         {error && (
           <div className="mb-4 rounded-xl border border-red-400/40 bg-red-900/30 px-4 py-3 text-sm text-red-100 animate-fadeIn">
@@ -3207,7 +4538,12 @@ Write the final summary now.`;
             setPlayerOccupationInput={setPlayerOccupationInput}
             generateCastaways={generateCastaways}
             generatingCastaways={generatingCastaways}
+            generatingCastawaysLabel={generatingCastawaysLabel}
           />
+        )}
+
+        {phase === 'arrival_intro' && (
+          <ArrivalIntroPhase loading={campArrivalLoading} introMessages={campArrivalIntroMessages} onJoin={joinArrivalConversation} />
         )}
 
         {phase === 'immunity_intro' && <ImmunityIntroPhase immunityType={immunityType} startImmunityChallenge={startImmunityChallenge} />}
@@ -3256,6 +4592,8 @@ Write the final summary now.`;
             castawayRaceWinner={castawayRaceWinner}
             castawayRaceTick={castawayRaceTick}
             giveUpImmunityChallenge={giveUpImmunityChallenge}
+            castawayNotesById={castawayNotesById}
+            openCastawayNotes={openCastawayNotes}
           />
         )}
 
@@ -3263,7 +4601,7 @@ Write the final summary now.`;
           <ImmunityResultPhase immunityResult={immunityResult} immunityType={immunityType} setPhase={setPhase} />
         )}
 
-        {(phase === 'arrival' || phase === 'convo') && (
+        {(phase === 'arrival' || phase === 'convo' || phase === 'debrief') && (
           <ConversationPhase
             castaways={castaways}
             selectedCastawayId={selectedCastawayId}
@@ -3285,16 +4623,17 @@ Write the final summary now.`;
             sendConversation={sendConversation}
             sendCampfireConversation={sendCampfireConversation}
             canSendConversation={canSendConversation}
-            badgeColor={badgeColor}
             openTribalPhase={openTribalPhase}
             isArrival={phase === 'arrival'}
+            isDebrief={phase === 'debrief'}
             startImmunityFromArrival={startImmunityFromArrival}
-            campArrivalLoading={campArrivalLoading}
-            campArrivalIntroMessages={campArrivalIntroMessages}
+            startNextImmunityFromDebrief={startNextImmunityChallengeFromDebrief}
+            debriefLoading={debriefLoading}
+            debriefIntroMessages={debriefIntroMessages}
             playerHasImmunity={playerHasImmunity}
             immuneCastawayName={immuneCastawayName}
             searchCamp={searchCamp}
-            canSearchCamp={phase === 'convo' && !chatInFlight && !campSearchOpen && !playerHasIdol && searchCount < MAX_CAMP_SEARCHES}
+            canSearchCamp={phase === 'convo' && !chatInFlight && !campSearchOpen && (playerHasIdol || searchCount < MAX_CAMP_SEARCHES)}
             idolRevealMoment={idolRevealMoment}
             dismissIdolReveal={() => setIdolRevealMoment('')}
             searchCount={searchCount}
@@ -3312,6 +4651,10 @@ Write the final summary now.`;
             canThoroughSearch={idolSearchProgress >= 45 || idolSearchClues >= 1 || playerFoundClueScroll || playerHeardIdolClue}
             selectCampSearchZone={selectCampSearchZone}
             runCampSearchAction={runCampSearchAction}
+            playerHasIdol={playerHasIdol}
+            idolPlantRecipientName={idolPlantRecipientName}
+            setIdolPlantRecipientName={setIdolPlantRecipientName}
+            leaveIdolAtCampZone={leaveIdolAtCampZone}
             closeCampSearch={() => finishCampSearch(false, 'You cut the search short and returned to camp.')}
             showPhaseTwoOnboarding={phase === 'convo' && !phaseTwoOnboardingDismissed}
             dismissPhaseTwoOnboarding={() => setPhaseTwoOnboardingDismissed(true)}
@@ -3319,6 +4662,15 @@ Write the final summary now.`;
             castawayCurrentlySearching={castawayCurrentlySearching}
             relationshipIntelByName={relationshipIntelByName}
             currentRound={currentRound}
+            castawayNotesById={castawayNotesById}
+            openCastawayNotes={openCastawayNotes}
+            castawayApproachesById={castawayApproachesById}
+            acceptCastawayApproach={acceptCastawayApproach}
+            dismissCastawayApproach={dismissCastawayApproach}
+            offerIdolToCastawayPrivately={offerIdolToCastawayPrivately}
+            pendingCastawayIdolOffer={pendingCastawayIdolOffer}
+            acceptCastawayIdolOffer={acceptCastawayIdolOffer}
+            declineCastawayIdolOffer={declineCastawayIdolOffer}
           />
         )}
 
@@ -3346,7 +4698,10 @@ Write the final summary now.`;
             playerHasFakeIdol={playerHasFakeIdol}
             idolPlayTarget={idolPlayTarget}
             setIdolPlayTarget={setIdolPlayTarget}
+            idolGiveTarget={idolGiveTarget}
+            setIdolGiveTarget={setIdolGiveTarget}
             playPlayerIdol={playPlayerIdol}
+            givePlayerIdolAtTribal={givePlayerIdolAtTribal}
             idolPlayedByPlayer={idolPlayedByPlayer}
             idolPlayedFakeByPlayer={idolPlayedFakeByPlayer}
             idolProtectedName={idolProtectedName}
@@ -3355,6 +4710,8 @@ Write the final summary now.`;
             revealedVotesCount={revealedVotesCount}
             votes={votes}
             eliminatedName={eliminatedName}
+            castawayNotesById={castawayNotesById}
+            openCastawayNotes={openCastawayNotes}
           />
         )}
 
@@ -3363,6 +4720,10 @@ Write the final summary now.`;
             revealLoading={revealLoading}
             revealData={revealData}
             castaways={castaways}
+            continueLoading={revealContinueLoading}
+            continueLoadingLabel={currentRound < TOTAL_ROUNDS ? 'Preparing Round 2 Briefing...' : 'Building Final Season Summary...'}
+            castawayNotesById={castawayNotesById}
+            openCastawayNotes={openCastawayNotes}
             onContinue={handleRevealContinue}
             continueLabel={currentRound < TOTAL_ROUNDS ? 'View Round 2 Briefing' : 'View Final Season Summary'}
           />
@@ -3387,6 +4748,12 @@ Write the final summary now.`;
         {phase === 'final' && (
           <FinalPhase notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail} submitNotify={submitNotify} notifyMessage={notifyMessage} notifySubmitting={notifySubmitting} />
         )}
+        <CastawayNotesModal
+          castaway={activeNotesCastaway}
+          note={activeNotesCastaway ? castawayNotesById?.[activeNotesCastaway.id] || '' : ''}
+          onChange={setCastawayNote}
+          onClose={closeCastawayNotes}
+        />
       </div>
     </div>
   );
