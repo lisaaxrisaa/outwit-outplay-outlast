@@ -109,6 +109,31 @@ export default function RevealPhase({
               </div>
             )}
 
+            {Array.isArray(revealData.lieCallouts) && revealData.lieCallouts.length > 0 && (
+              <div>
+                <h3 className="mb-3 text-xl font-semibold text-orange-200">Lies Exposed</h3>
+                <div className="space-y-3">
+                  {revealData.lieCallouts.map((l, idx) => (
+                    <div key={`${l.name}-${idx}`} className="rounded-xl border border-amber-300/35 bg-amber-900/20 p-4 text-sm text-zinc-100">
+                      <div className="font-semibold text-amber-100">{l.name}</div>
+                      {l.lie && <div className="mt-1 text-zinc-200">Lie told: {l.lie}</div>}
+                      {l.truth && <div className="mt-1 text-zinc-200">Truth: {l.truth}</div>}
+                      {l.tell && <div className="mt-1 text-zinc-300">Tell: {l.tell}</div>}
+                      {l.opportunityToCatch && <div className="mt-1 text-zinc-300">Opportunity: {l.opportunityToCatch}</div>}
+                      {castawayByName[l.name] && (
+                        <CastawayNotesField
+                          castawayId={castawayByName[l.name].id}
+                          castawayName={l.name}
+                          note={castawayNotesById?.[castawayByName[l.name].id] || ''}
+                          onOpen={openCastawayNotes}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-amber-300/35 bg-amber-700/15 p-4">
               {revealData.idolStory && (
                 <div className="mb-3 rounded-xl border border-yellow-300/35 bg-yellow-700/15 p-3 text-sm text-zinc-100">

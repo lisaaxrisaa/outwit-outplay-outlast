@@ -37,6 +37,7 @@ export function stripCodeFences(raw) {
 
 export function parseClaudeJson(raw) {
   const cleaned = stripCodeFences(raw);
+  if (!cleaned) return null;
   try {
     return JSON.parse(cleaned);
   } catch (err) {
@@ -57,11 +58,42 @@ export function parseClaudeJson(raw) {
       try {
         return JSON.parse(c);
       } catch (_) {
+        const repaired = repairJsonLikeText(c);
+        if (repaired && repaired !== c) {
+          try {
+            return JSON.parse(repaired);
+          } catch {
+            // noop
+          }
+        }
+      }
+    }
+    const repairedWhole = repairJsonLikeText(cleaned);
+    if (repairedWhole && repairedWhole !== cleaned) {
+      try {
+        return JSON.parse(repairedWhole);
+      } catch {
         // noop
       }
     }
     throw err;
   }
+}
+
+function repairJsonLikeText(input) {
+  if (!input || typeof input !== 'string') return input;
+  let s = input.trim();
+  // Normalize smart quotes often returned by model formatting.
+  s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  // Remove JS-style comments.
+  s = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+  // Quote unquoted object keys: { key: ... } or , key: ...
+  s = s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+  // Convert single-quoted strings to double-quoted strings.
+  s = s.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_, inner) => `"${inner.replace(/"/g, '\\"')}"`);
+  // Remove trailing commas before object/array close.
+  s = s.replace(/,\s*([}\]])/g, '$1');
+  return s;
 }
 
 export function getClaudeText(payload) {
